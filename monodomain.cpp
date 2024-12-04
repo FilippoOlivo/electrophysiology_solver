@@ -401,7 +401,7 @@ Monodomain::run()
       time += dt;
       Iapp->set_time(time);
 
-      ionic_model.solve(u_old);
+      ionic_model.solve(u_old, time);
       assemble_time_terms();
 
       solve();
