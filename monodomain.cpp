@@ -24,6 +24,7 @@
 #include "applied_current.hpp"
 #include "common.hpp"
 #include "ionic.hpp"
+#include "save_utils.hpp"
 
 using namespace dealii;
 
@@ -73,6 +74,9 @@ private:
   void
   output_results();
 
+  void
+  save_dofs_locations();
+
   const Parameters              &params;
   std::unique_ptr<BuenoOrovio>   ionic_model;
   std::unique_ptr<FEValues<dim>> fe_values;
@@ -119,7 +123,6 @@ Monodomain::Monodomain(const Parameters                 &solver_params,
   , dt(params.dt)
   , time_step(0)
   , time_end(params.time_end)
-
 {}
 
 
@@ -140,7 +143,7 @@ Monodomain::setup()
   dof_handler.distribute_dofs(fe);
   locally_owned_dofs    = dof_handler.locally_owned_dofs();
   locally_relevant_dofs = DoFTools::extract_locally_relevant_dofs(dof_handler);
-
+  save_dofs_locations();
   constraints.clear();
   constraints.reinit(locally_owned_dofs, locally_relevant_dofs);
   constraints.close();
@@ -159,6 +162,7 @@ Monodomain::setup()
   u_old.reinit(locally_owned_dofs, locally_relevant_dofs, mpi_comm);
   u.reinit(locally_owned_dofs, locally_relevant_dofs, mpi_comm);
   system_rhs.reinit(locally_owned_dofs, locally_relevant_dofs, mpi_comm);
+
 
   ionic_model->setup(locally_owned_dofs, locally_relevant_dofs, dt);
 }
@@ -346,9 +350,103 @@ Monodomain::output_results()
     data_filter, filename_mesh, filename_h5, time, mpi_comm)});
 
   data_out.write_xdmf_file(xdmf_entries, filename_xdmf, mpi_comm);
+
 }
+void
+Monodomain::save_dofs_locations()
+{
+  std::map<types::global_dof_index, Point<3>> locations = DoFTools::map_dofs_to_support_points(mapping, dof_handler);
+  std::vector<Point<3>> local_locations(locally_owned_dofs.size());
+  unsigned int i = 0;
+  for (auto idx : locally_owned_dofs)
+    {
+      local_locations[i] = locations[idx];
+      ++i;
+    }
+  std::vector<double> x(dof_handler.n_locally_owned_dofs());
+  std::vector<double> y(dof_handler.n_locally_owned_dofs());
+  std::vector<double> z(dof_handler.n_locally_owned_dofs());
+  std::vector<int> local_index(dof_handler.n_locally_owned_dofs());
 
+  for (unsigned int i=0; i<dof_handler.n_locally_owned_dofs(); i++)
+    {
+      x[i] = local_locations[i][0];
+      y[i] = local_locations[i][1];
+      z[i] = local_locations[i][2];
+    }
+  int local_size = dof_handler.n_locally_owned_dofs();
 
+  std::vector<int> per_proc_size(mpi_size);
+  MPI_Allgather(&local_size, 1, MPI_INT, per_proc_size.data(), 1,
+                MPI_INT, mpi_comm);
+
+  std::vector<int> displacement(mpi_size, 0);
+  for (unsigned int i = 1; i < mpi_size; i++)
+    {
+      displacement[i] = displacement[i - 1] + per_proc_size[i - 1];
+    }
+
+  std::vector<double> global_x;
+  std::vector<double> global_y;
+  std::vector<double> global_z;
+  std::vector<int> global_index;
+  if (mpi_rank == 0)
+    {
+      global_x.resize(dof_handler.n_dofs());
+      global_y.resize(dof_handler.n_dofs());
+      global_z.resize(dof_handler.n_dofs());
+      global_index.resize(dof_handler.n_dofs());
+    }
+
+  MPI_Gatherv(x.data(), // send buffer
+           local_size, // send size
+           MPI_DOUBLE, // type
+           mpi_rank == 0 ? global_x.data() : nullptr, // receive buffer
+           per_proc_size.data(), // receive size
+           displacement.data(),
+           MPI_DOUBLE, // receive type
+           0, // main processor
+           mpi_comm // MPI Comminicator
+           );
+  MPI_Gatherv(y.data(), // send buffer
+         local_size, // send size
+         MPI_DOUBLE, // type
+         mpi_rank == 0 ? global_x.data() : nullptr, // receive buffer
+         per_proc_size.data(), // receive size
+         displacement.data(),
+         MPI_DOUBLE, // receive type
+         0, // main processor
+         mpi_comm // MPI Comminicator
+         );
+  MPI_Gatherv(z.data(), // send buffer
+         local_size, // send size
+         MPI_DOUBLE, // type
+         mpi_rank == 0 ? global_x.data() : nullptr, // receive buffer
+         per_proc_size.data(), // receive size
+         displacement.data(),
+         MPI_DOUBLE, // receive type
+         0, // main processor
+         mpi_comm // MPI Comminicator
+         );
+  MPI_Gatherv(local_index.data(), // send buffer
+       local_size, // send size
+       MPI_INT, // type
+       mpi_rank == 0 ? global_index.data() : nullptr, // receive buffer
+       per_proc_size.data(), // receive size
+       displacement.data(),
+       MPI_INT, // receive type
+       0, // main processor
+       mpi_comm // MPI Comminicator
+       );
+  if (mpi_rank == 0)
+    {
+    save_vector_as_binary(global_x, "global_x.bin", dof_handler.n_dofs());
+    save_vector_as_binary(global_y, "global_y.bin", dof_handler.n_dofs());
+    save_vector_as_binary(global_z, "global_z.bin", dof_handler.n_dofs());
+
+    }
+  MPI_Barrier(mpi_comm);
+}
 
 void
 Monodomain::run()
