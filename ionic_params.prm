@@ -23,7 +23,7 @@ subsection Monodomain solver
   end
 
   subsection Bueno-Orovio
-    set V1         = 0.4
+    set V1         = 0.3
     set V1m        = 0.015
     set V2         = 0.015
     set V2m        = 0.03

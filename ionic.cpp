@@ -1,27 +1,10 @@
-#include "ionic.hpp"#include <typeinfo>
+#include "ionic.hpp"
 #include <deal.II/base/mpi.h>
 #include <deal.II/base/hdf5.h>
 #include <fstream>
 #include <iostream>
 #include <vector>
-void save_vector_as_binary(const std::vector<double> &vec, const std::string &filename)
-{
-  std::ofstream file(filename, std::ios::binary);
-  if (!file.is_open())
-    {
-      throw std::runtime_error("Error opening file for writing.");
-    }
-
-  // Write the size of the vector first (optional but useful for loading)
-  std::size_t size = vec.size();
-  file.write(reinterpret_cast<const char *>(&size), sizeof(size));
-
-  // Write the data
-  file.write(reinterpret_cast<const char *>(vec.data()), size * sizeof(double));
-
-  file.close();
-  std::cout << "Vector saved to " << filename << " in binary format." << std::endl;
-}
+#include "save_utils.hpp"
 
 BuenoOrovio::BuenoOrovio(const Parameters &params)
   : params(params)
@@ -162,24 +145,8 @@ BuenoOrovio::solve(const LinearAlgebra::distributed::Vector<double> &u_old,
 
       Iion[idx] = Iion_0d(u_old[idx], {{w[0][idx], w[1][idx], w[2][idx]}});
     }
-
-  std::vector<double> local_vector(w[0].size() * 3);
-  for (unsigned int i=0; i<3; i++)
-    {
-      unsigned int offset = w[0].size() * i;
-      const auto &locally_owned = w[i].locally_owned_elements();
-      for (unsigned int idx : locally_owned){
-        local_vector[idx + offset] = w[i][idx];
-      }
-    }
-  save_vector_as_binary(local_vector, "test.bin");
-  // Write the distributed vector to the file
-
+  save_snapshot(mpi_rank, mpi_size, w, time, mpi_comm);
   Iion.update_ghost_values();
 
   w_old = w;
 }
-
-
-
-// Save a vector to a binary file
