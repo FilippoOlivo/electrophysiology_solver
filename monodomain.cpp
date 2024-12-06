@@ -39,6 +39,7 @@ public:
     {
       add_parameter("fe_degree", fe_degree, "Finite Element degree");
       add_parameter("map_degree", map_degree, "Mapping degree");
+      add_parameter("map_degree", map_degree, "Mapping degree");
       add_parameter("dt", dt, "Time step");
       add_parameter("time_end", time_end, "Final time");
       add_parameter("sigma", sigma, "Conductivity");
@@ -49,10 +50,18 @@ public:
 
     double dt       = 1e-3;
     double time_end = 1.;
+    unsigned int fe_degree  = 1;
+    unsigned int map_degree = 0;
+
+    double dt       = 1e-3;
+    double time_end = 1.;
 
     double sigma = 1e-4;
   };
 
+  Monodomain(const Parameters                 &solver_params,
+             const BuenoOrovio::Parameters    &ionic_model_params,
+             const AppliedCurrent::Parameters &applied_current_params);
   Monodomain(const Parameters                 &solver_params,
              const BuenoOrovio::Parameters    &ionic_model_params,
              const AppliedCurrent::Parameters &applied_current_params);
@@ -74,8 +83,9 @@ private:
   void
   output_results();
 
-  void
-  save_dofs_locations();
+  const Parameters              &params;
+  std::unique_ptr<BuenoOrovio>   ionic_model;
+  std::unique_ptr<FEValues<dim>> fe_values;
 
   const Parameters              &params;
   std::unique_ptr<BuenoOrovio>   ionic_model;
@@ -109,6 +119,11 @@ private:
 
 
 
+Monodomain::Monodomain(const Parameters                 &solver_params,
+                       const BuenoOrovio::Parameters    &ionic_model_params,
+                       const AppliedCurrent::Parameters &applied_current_params)
+  : params(solver_params)
+  , ionic_model(std::make_unique<BuenoOrovio>(ionic_model_params))
 Monodomain::Monodomain(const Parameters                 &solver_params,
                        const BuenoOrovio::Parameters    &ionic_model_params,
                        const AppliedCurrent::Parameters &applied_current_params)
@@ -316,7 +331,9 @@ Monodomain::output_results()
 
   //
   for (unsigned int i = 0; i < ionic_model->w.size(); ++i)
+  for (unsigned int i = 0; i < ionic_model->w.size(); ++i)
     {
+      data_out.add_data_vector(ionic_model->w[i],
       data_out.add_data_vector(ionic_model->w[i],
                                "w" + std::to_string(i),
                                DataOut<dim>::type_dof_data);
