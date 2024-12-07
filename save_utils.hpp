@@ -86,7 +86,7 @@ inline void save_snapshot(const unsigned int mpi_rank, const unsigned int mpi_si
 
     if (mpi_rank == 0){
         char buffer_w[100];
-        snprintf(buffer_w, sizeof(buffer_w), "snapshot/%.3f_w.bin", time);
+        snprintf(buffer_w, sizeof(buffer_w), "snapshot/%.4f_w.bin", time);
         std::string filename_w(buffer_w);
         save_vector_as_binary(global_vector, filename_w, vec[0].size());
       }
