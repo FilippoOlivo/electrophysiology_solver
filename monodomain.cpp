@@ -42,6 +42,9 @@ public:
       add_parameter("dt", dt, "Time step");
       add_parameter("time_end", time_end, "Final time");
       add_parameter("sigma", sigma, "Conductivity");
+      add_parameter("save_hdf5", save_hdf5, "Save in hdf5 format");
+      add_parameter("save_xdmf", save_xdmf, "Save in xdmf format");
+      add_parameter("save_vtu", save_vtu, "Save in vtu format");
     }
 
     unsigned int fe_degree  = 1;
@@ -51,6 +54,9 @@ public:
     double time_end = 1.;
 
     double sigma = 1e-4;
+    bool save_hdf5 = false;
+    bool save_xdmf = false;
+    bool save_vtu = true;
   };
 
   Monodomain(const Parameters                 &solver_params,
@@ -71,8 +77,12 @@ private:
   assemble_time_terms();
   void
   solve();
+
   void
   output_results();
+
+  void
+  save_dofs_location();
 
   const Parameters              &params;
   std::unique_ptr<BuenoOrovio>   ionic_model;
@@ -120,6 +130,7 @@ Monodomain::Monodomain(const Parameters                 &solver_params,
   , dt(params.dt)
   , time_step(0)
   , time_end(params.time_end)
+
 {}
 
 
@@ -140,7 +151,7 @@ Monodomain::setup()
   dof_handler.distribute_dofs(fe);
   locally_owned_dofs    = dof_handler.locally_owned_dofs();
   locally_relevant_dofs = DoFTools::extract_locally_relevant_dofs(dof_handler);
-  save_dofs_locations();
+  save_dofs_location();
   constraints.clear();
   constraints.reinit(locally_owned_dofs, locally_relevant_dofs);
   constraints.close();
@@ -277,8 +288,6 @@ Monodomain::assemble_time_terms()
                            u_old); // Add to system_rhs (M/dt) * u_n
 }
 
-
-
 void
 Monodomain::solve()
 {
@@ -295,8 +304,6 @@ Monodomain::solve()
         << std::endl;
 }
 
-
-
 void
 Monodomain::output_results()
 {
@@ -305,20 +312,15 @@ Monodomain::output_results()
   DataOut<dim> data_out;
   data_out.attach_dof_handler(dof_handler);
 
-  //
   data_out.add_data_vector(u,
                            "transmembrane_potential",
                            DataOut<dim>::type_dof_data);
-
-  //
   for (unsigned int i = 0; i < ionic_model->w.size(); ++i)
     {
       data_out.add_data_vector(ionic_model->w[i],
                                "w" + std::to_string(i),
                                DataOut<dim>::type_dof_data);
     }
-
-  //
   Vector<float> subdomain(tria.n_active_cells());
   for (unsigned int i = 0; i < subdomain.size(); ++i)
     subdomain(i) = tria.locally_owned_subdomain();
@@ -334,22 +336,97 @@ Monodomain::output_results()
     basename + "_" + std::to_string(time) + ".xdmf";
   const std::string filename_mesh =
     basename + "_" + std::to_string(0.0) + ".h5";
+  const std::string filename_vtu =
+  basename + "_" + std::to_string(time) + ".vtu";
 
+  if (params.save_hdf5 || params.save_xdmf)
   DataOutBase::DataOutFilter data_filter(
-    DataOutBase::DataOutFilterFlags(true, true));
+      DataOutBase::DataOutFilterFlags(true, true));
 
-  data_out.write_filtered_data(data_filter);
-  data_out.write_hdf5_parallel(
-    data_filter, export_mesh, filename_mesh, filename_h5, mpi_comm);
+  if (params.save_hdf5){
+    data_out.write_filtered_data(data_filter);
+    data_out.write_hdf5_parallel(
+      data_filter, export_mesh, filename_mesh, filename_h5, mpi_comm);
+  }
+  if (params.save_xdmf){
+    std::vector<XDMFEntry> xdmf_entries({data_out.create_xdmf_entry(
+      data_filter, filename_mesh, filename_h5, time, mpi_comm)});
 
-  std::vector<XDMFEntry> xdmf_entries({data_out.create_xdmf_entry(
-    data_filter, filename_mesh, filename_h5, time, mpi_comm)});
-
-  data_out.write_xdmf_file(xdmf_entries, filename_xdmf, mpi_comm);
-
+    data_out.write_xdmf_file(xdmf_entries, filename_xdmf, mpi_comm);
+  }
+  if (params.save_vtu)
+    data_out.write_vtu_in_parallel(filename_vtu, mpi_comm);
 }
+
+
+
 void
-Monodomain::save_dofs_locations()
+Monodomain::run()
+{
+  // Create mesh
+  {
+    TimerOutput::Scope t(timer, "Create mesh");
+    Triangulation<dim> tria_dummy;
+
+    GridIn<dim> grid_in;
+    grid_in.attach_triangulation(tria_dummy);
+    std::ifstream mesh_file("../idealized_lv.msh");
+    grid_in.read_msh(mesh_file);
+
+    const double scale_factor = 1e-3;
+    GridTools::scale(scale_factor, tria_dummy);
+
+    GridTools::partition_triangulation(mpi_size, tria_dummy);
+
+    const TriangulationDescription::Description<dim, dim> description =
+      TriangulationDescription::Utilities::
+        create_description_from_triangulation(tria_dummy, mpi_comm);
+
+    tria.create_triangulation(description);
+  }
+
+  pcout << "\tNumber of active cells:       " << tria.n_global_active_cells()
+        << std::endl;
+
+  setup();
+  pcout << "\tNumber of degrees of freedom: " << dof_handler.n_dofs()
+        << std::endl;
+
+  u_old = -84e-3;
+  u     = u_old;
+
+  output_results();
+
+  assemble_time_independent_matrix();
+
+  // M/dt + A
+  system_matrix.copy_from(mass_matrix_dt);
+  system_matrix.add(+1, laplace_matrix);
+
+  amg_preconditioner.initialize(system_matrix);
+
+  while (time <= time_end)
+    {
+      time += dt;
+      Iapp->set_time(time);
+
+      ionic_model->solve(u_old, time);
+      assemble_time_terms();
+
+      solve();
+      pcout << "Solved at t = " << time << std::endl;
+      ++time_step;
+
+      if ((time_step % 10 == 0))
+        output_results();
+
+      u_old = u;
+    }
+  pcout << std::endl;
+}
+
+void
+Monodomain::save_dofs_location()
 {
   std::map<types::global_dof_index, Point<3>> locations = DoFTools::map_dofs_to_support_points(mapping, dof_handler);
   std::vector<Point<3>> local_locations(locally_owned_dofs.size());
@@ -444,86 +521,21 @@ Monodomain::save_dofs_locations()
   MPI_Barrier(mpi_comm);
 }
 
-void
-Monodomain::run()
-{
-  // Create mesh
-  {
-    TimerOutput::Scope t(timer, "Create mesh");
-    Triangulation<dim> tria_dummy;
-
-    GridIn<dim> grid_in;
-    grid_in.attach_triangulation(tria_dummy);
-    std::ifstream mesh_file("../idealized_lv.msh");
-    grid_in.read_msh(mesh_file);
-
-    const double scale_factor = 1e-3;
-    GridTools::scale(scale_factor, tria_dummy);
-
-    GridTools::partition_triangulation(mpi_size, tria_dummy);
-
-    const TriangulationDescription::Description<dim, dim> description =
-      TriangulationDescription::Utilities::
-        create_description_from_triangulation(tria_dummy, mpi_comm);
-
-    tria.create_triangulation(description);
-  }
-
-  pcout << "\tNumber of active cells:       " << tria.n_global_active_cells()
-        << std::endl;
-
-  setup();
-  pcout << "\tNumber of degrees of freedom: " << dof_handler.n_dofs()
-        << std::endl;
-
-  u_old = -84e-3;
-  u     = u_old;
-
-  output_results();
-
-  assemble_time_independent_matrix();
-
-  // M/dt + A
-  system_matrix.copy_from(mass_matrix_dt);
-  system_matrix.add(+1, laplace_matrix);
-
-  amg_preconditioner.initialize(system_matrix);
-
-  while (time <= time_end)
-    {
-      time += dt;
-      Iapp->set_time(time);
-
-      ionic_model.solve(u_old);
-      assemble_time_terms();
-
-      solve();
-      pcout << "Solved at t = " << time << std::endl;
-      ++time_step;
-
-      if ((time_step % 10 == 0))
-        output_results();
-
-      u_old = u;
-    }
-  pcout << std::endl;
-}
-
-
-
 int
 main(int argc, char *argv[])
 {
   Utilities::MPI::MPI_InitFinalize mpi_initialization(argc, argv, 1);
 
-  Monodomain::Parameters  solver_params;
-  BuenoOrovio::Parameters model_params;
+  Monodomain::Parameters     monodomain_params;
+  BuenoOrovio::Parameters    ionic_model_params;
   AppliedCurrent::Parameters applied_current_params;
-  ParameterAcceptor::initialize("../ionic_params.prm");
+  ParameterAcceptor::initialize("../parameters.prm");
 
-  Monodomain problem(model_params, solver_params, applied_current_params);
+  Monodomain problem(monodomain_params, ionic_model_params, applied_current_params);
 
   problem.run();
 
   return 0;
 }
+
+
