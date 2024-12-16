@@ -145,7 +145,7 @@ BuenoOrovio::solve(const LinearAlgebra::distributed::Vector<double> &u_old,
 
       Iion[idx] = Iion_0d(u_old[idx], {{w[0][idx], w[1][idx], w[2][idx]}});
     }
-  save_snapshot(mpi_rank, mpi_size, w, time, mpi_comm);
+  save_snapshot(mpi_rank, mpi_size, w, time, locally_owned_dofs, mpi_comm);
   Iion.update_ghost_values();
 
   w_old = w;

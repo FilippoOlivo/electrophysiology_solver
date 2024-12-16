@@ -1,26 +1,18 @@
 #include <deal.II/base/parameter_acceptor.h>
-
 #include <deal.II/distributed/fully_distributed_tria.h>
-
 #include <deal.II/dofs/dof_tools.h>
-
 #include <deal.II/fe/fe_q.h>
 #include <deal.II/fe/fe_values.h>
 #include <deal.II/fe/mapping.h>
-
 #include <deal.II/grid/grid_in.h>
 #include <deal.II/grid/grid_tools.h>
-
 #include <deal.II/lac/solver_cg.h>
 #include <deal.II/lac/sparse_matrix.h>
 #include <deal.II/lac/trilinos_precondition.h>
 #include <deal.II/lac/trilinos_sparse_matrix.h>
-
 #include <deal.II/numerics/data_out.h>
-
 #include <cmath>
 #include <fstream>
-
 #include "applied_current.hpp"
 #include "common.hpp"
 #include "ionic.hpp"
@@ -34,6 +26,18 @@ public:
   class Parameters : public ParameterAcceptor
   {
   public:
+      unsigned int fe_degree  = 1;
+    unsigned int map_degree = 1;
+
+    double dt       = 1e-3;
+    double time_end = 1.;
+
+    double sigma = 1e-4;
+    bool save_hdf5 = false;
+    bool save_xdmf = false;
+    bool save_vtu = true;
+
+    
     Parameters()
       : ParameterAcceptor("Monodomain solver")
     {
@@ -46,6 +50,7 @@ public:
       add_parameter("save_hdf5", save_hdf5, "Save in hdf5 format");
       add_parameter("save_xdmf", save_xdmf, "Save in xdmf format");
       add_parameter("save_vtu", save_vtu, "Save in vtu format");
+
     }
 
     unsigned int fe_degree  = 1;
@@ -154,7 +159,6 @@ void
 Monodomain::setup()
 {
   TimerOutput::Scope t(timer, "Setup monodomain");
-
   fe_values =
     std::make_unique<FEValues<dim>>(mapping,
                                     fe,
@@ -166,7 +170,7 @@ Monodomain::setup()
   dof_handler.distribute_dofs(fe);
   locally_owned_dofs    = dof_handler.locally_owned_dofs();
   locally_relevant_dofs = DoFTools::extract_locally_relevant_dofs(dof_handler);
-  save_dofs_location();
+
   constraints.clear();
   constraints.reinit(locally_owned_dofs, locally_relevant_dofs);
   constraints.close();
@@ -358,8 +362,6 @@ Monodomain::output_results()
     basename + "_" + std::to_string(0.0) + ".h5";
   const std::string filename_vtu =
   basename + "_" + std::to_string(time) + ".vtu";
-
-  if (params.save_hdf5 || params.save_xdmf)
   DataOutBase::DataOutFilter data_filter(
       DataOutBase::DataOutFilterFlags(true, true));
 
@@ -377,8 +379,6 @@ Monodomain::output_results()
   if (params.save_vtu)
     data_out.write_vtu_in_parallel(filename_vtu, mpi_comm);
 }
-
-
 
 void
 Monodomain::run()
@@ -409,37 +409,29 @@ Monodomain::run()
         << std::endl;
 
   setup();
+  save_dofs_location<dim>(dof_handler, locally_owned_dofs, mapping, mpi_rank, mpi_size, mpi_comm);
   pcout << "\tNumber of degrees of freedom: " << dof_handler.n_dofs()
         << std::endl;
 
   u_old = -84e-3;
   u     = u_old;
-
-  output_results();
-
   assemble_time_independent_matrix();
-
   // M/dt + A
   system_matrix.copy_from(mass_matrix_dt);
   system_matrix.add(+1, laplace_matrix);
-
   amg_preconditioner.initialize(system_matrix);
 
   while (time <= time_end)
     {
       time += dt;
       Iapp->set_time(time);
-
       ionic_model->solve(u_old, time);
       assemble_time_terms();
-
       solve();
       pcout << "Solved at t = " << time << std::endl;
       ++time_step;
-
       if ((time_step % 10 == 0))
         output_results();
-
       u_old = u;
     }
   pcout << std::endl;
