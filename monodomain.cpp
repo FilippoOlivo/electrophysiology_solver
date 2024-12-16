@@ -1,26 +1,18 @@
 #include <deal.II/base/parameter_acceptor.h>
-
 #include <deal.II/distributed/fully_distributed_tria.h>
-
 #include <deal.II/dofs/dof_tools.h>
-
 #include <deal.II/fe/fe_q.h>
 #include <deal.II/fe/fe_values.h>
 #include <deal.II/fe/mapping.h>
-
 #include <deal.II/grid/grid_in.h>
 #include <deal.II/grid/grid_tools.h>
-
 #include <deal.II/lac/solver_cg.h>
 #include <deal.II/lac/sparse_matrix.h>
 #include <deal.II/lac/trilinos_precondition.h>
 #include <deal.II/lac/trilinos_sparse_matrix.h>
-
 #include <deal.II/numerics/data_out.h>
-
 #include <cmath>
 #include <fstream>
-
 #include "applied_current.hpp"
 #include "common.hpp"
 #include "ionic.hpp"
@@ -34,6 +26,18 @@ public:
   class Parameters : public ParameterAcceptor
   {
   public:
+      unsigned int fe_degree  = 1;
+    unsigned int map_degree = 1;
+
+    double dt       = 1e-3;
+    double time_end = 1.;
+
+    double sigma = 1e-4;
+    bool save_hdf5 = false;
+    bool save_xdmf = false;
+    bool save_vtu = true;
+
+    
     Parameters()
       : ParameterAcceptor("Monodomain solver")
     {
@@ -45,18 +49,9 @@ public:
       add_parameter("save_hdf5", save_hdf5, "Save in hdf5 format");
       add_parameter("save_xdmf", save_xdmf, "Save in xdmf format");
       add_parameter("save_vtu", save_vtu, "Save in vtu format");
+
     }
-
-    unsigned int fe_degree  = 1;
-    unsigned int map_degree = 0;
-
-    double dt       = 1e-3;
-    double time_end = 1.;
-
-    double sigma = 1e-4;
-    bool save_hdf5 = false;
-    bool save_xdmf = false;
-    bool save_vtu = true;
+    
   };
 
   Monodomain(const Parameters                 &solver_params,
@@ -80,9 +75,6 @@ private:
 
   void
   output_results();
-
-  void
-  save_dofs_location();
 
   const Parameters              &params;
   std::unique_ptr<BuenoOrovio>   ionic_model;
@@ -139,7 +131,6 @@ void
 Monodomain::setup()
 {
   TimerOutput::Scope t(timer, "Setup monodomain");
-
   fe_values =
     std::make_unique<FEValues<dim>>(mapping,
                                     fe,
@@ -151,7 +142,7 @@ Monodomain::setup()
   dof_handler.distribute_dofs(fe);
   locally_owned_dofs    = dof_handler.locally_owned_dofs();
   locally_relevant_dofs = DoFTools::extract_locally_relevant_dofs(dof_handler);
-  save_dofs_location();
+
   constraints.clear();
   constraints.reinit(locally_owned_dofs, locally_relevant_dofs);
   constraints.close();
@@ -338,8 +329,6 @@ Monodomain::output_results()
     basename + "_" + std::to_string(0.0) + ".h5";
   const std::string filename_vtu =
   basename + "_" + std::to_string(time) + ".vtu";
-
-  if (params.save_hdf5 || params.save_xdmf)
   DataOutBase::DataOutFilter data_filter(
       DataOutBase::DataOutFilterFlags(true, true));
 
@@ -357,8 +346,6 @@ Monodomain::output_results()
   if (params.save_vtu)
     data_out.write_vtu_in_parallel(filename_vtu, mpi_comm);
 }
-
-
 
 void
 Monodomain::run()
@@ -389,136 +376,32 @@ Monodomain::run()
         << std::endl;
 
   setup();
+  save_dofs_location<dim>(dof_handler, locally_owned_dofs, mapping, mpi_rank, mpi_size, mpi_comm);
   pcout << "\tNumber of degrees of freedom: " << dof_handler.n_dofs()
         << std::endl;
 
   u_old = -84e-3;
   u     = u_old;
-
-  output_results();
-
   assemble_time_independent_matrix();
-
   // M/dt + A
   system_matrix.copy_from(mass_matrix_dt);
   system_matrix.add(+1, laplace_matrix);
-
   amg_preconditioner.initialize(system_matrix);
 
   while (time <= time_end)
     {
       time += dt;
       Iapp->set_time(time);
-
       ionic_model->solve(u_old, time);
       assemble_time_terms();
-
       solve();
       pcout << "Solved at t = " << time << std::endl;
       ++time_step;
-
       if ((time_step % 10 == 0))
         output_results();
-
       u_old = u;
     }
   pcout << std::endl;
-}
-
-void
-Monodomain::save_dofs_location()
-{
-  std::map<types::global_dof_index, Point<3>> locations = DoFTools::map_dofs_to_support_points(mapping, dof_handler);
-  std::vector<Point<3>> local_locations(locally_owned_dofs.size());
-  unsigned int i = 0;
-  for (auto idx : locally_owned_dofs)
-    {
-      local_locations[i] = locations[idx];
-      ++i;
-    }
-  std::vector<double> x(dof_handler.n_locally_owned_dofs());
-  std::vector<double> y(dof_handler.n_locally_owned_dofs());
-  std::vector<double> z(dof_handler.n_locally_owned_dofs());
-  std::vector<int> local_index(dof_handler.n_locally_owned_dofs());
-
-  for (unsigned int i=0; i<dof_handler.n_locally_owned_dofs(); i++)
-    {
-      x[i] = local_locations[i][0];
-      y[i] = local_locations[i][1];
-      z[i] = local_locations[i][2];
-    }
-  int local_size = dof_handler.n_locally_owned_dofs();
-
-  std::vector<int> per_proc_size(mpi_size);
-  MPI_Allgather(&local_size, 1, MPI_INT, per_proc_size.data(), 1,
-                MPI_INT, mpi_comm);
-
-  std::vector<int> displacement(mpi_size, 0);
-  for (unsigned int i = 1; i < mpi_size; i++)
-    {
-      displacement[i] = displacement[i - 1] + per_proc_size[i - 1];
-    }
-
-  std::vector<double> global_x;
-  std::vector<double> global_y;
-  std::vector<double> global_z;
-  std::vector<int> global_index;
-  if (mpi_rank == 0)
-    {
-      global_x.resize(dof_handler.n_dofs());
-      global_y.resize(dof_handler.n_dofs());
-      global_z.resize(dof_handler.n_dofs());
-      global_index.resize(dof_handler.n_dofs());
-    }
-
-  MPI_Gatherv(x.data(), // send buffer
-           local_size, // send size
-           MPI_DOUBLE, // type
-           mpi_rank == 0 ? global_x.data() : nullptr, // receive buffer
-           per_proc_size.data(), // receive size
-           displacement.data(),
-           MPI_DOUBLE, // receive type
-           0, // main processor
-           mpi_comm // MPI Comminicator
-           );
-  MPI_Gatherv(y.data(), // send buffer
-         local_size, // send size
-         MPI_DOUBLE, // type
-         mpi_rank == 0 ? global_x.data() : nullptr, // receive buffer
-         per_proc_size.data(), // receive size
-         displacement.data(),
-         MPI_DOUBLE, // receive type
-         0, // main processor
-         mpi_comm // MPI Comminicator
-         );
-  MPI_Gatherv(z.data(), // send buffer
-         local_size, // send size
-         MPI_DOUBLE, // type
-         mpi_rank == 0 ? global_x.data() : nullptr, // receive buffer
-         per_proc_size.data(), // receive size
-         displacement.data(),
-         MPI_DOUBLE, // receive type
-         0, // main processor
-         mpi_comm // MPI Comminicator
-         );
-  MPI_Gatherv(local_index.data(), // send buffer
-       local_size, // send size
-       MPI_INT, // type
-       mpi_rank == 0 ? global_index.data() : nullptr, // receive buffer
-       per_proc_size.data(), // receive size
-       displacement.data(),
-       MPI_INT, // receive type
-       0, // main processor
-       mpi_comm // MPI Comminicator
-       );
-  if (mpi_rank == 0)
-    {
-    save_vector_as_binary(global_x, "global_x.bin", dof_handler.n_dofs());
-    save_vector_as_binary(global_y, "global_y.bin", dof_handler.n_dofs());
-    save_vector_as_binary(global_z, "global_z.bin", dof_handler.n_dofs());
-
-    }
-  MPI_Barrier(mpi_comm);
 }
 
 int
@@ -531,7 +414,8 @@ main(int argc, char *argv[])
   AppliedCurrent::Parameters applied_current_params;
   ParameterAcceptor::initialize("../parameters.prm");
 
-  Monodomain problem(monodomain_params, ionic_model_params, applied_current_params);
+  Monodomain problem(monodomain_params, ionic_model_params,
+                     applied_current_params);
 
   problem.run();
 
