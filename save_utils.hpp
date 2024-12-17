@@ -18,6 +18,7 @@ public:
   void setup(unsigned int mpi_rank, unsigned int mpi_size, DoFHandler<dim> &dof_handler, MPI_Comm mpi_comm){ 
     this->mpi_comm = mpi_comm; this->mpi_size = mpi_size; this->mpi_rank = mpi_rank;
     local_size = dof_handler.n_locally_owned_dofs();
+    
     sizes.resize(mpi_size);
     displacement.resize(mpi_size);
     MPI_Allgather(&local_size, 1, MPI_INT, sizes.data(), 1, MPI_INT, mpi_comm);
@@ -125,12 +126,8 @@ save_dofs_location(DoFHandler<dim> &dof_handler, IndexSet &locally_owned_dofs,
       y[i] = local_locations[i][1];
       z[i] = local_locations[i][2];
     }
-  std::cout<<"Before gather"<<std::endl;
   auto global_x = gather_tool.gather_vector(x);
-  std::cout<<"After gather"<<std::endl;
-  std::cout<<"Before gather 2"<<std::endl;
   auto global_y = gather_tool.gather_vector(y);
-  std::cout<<"After gather 2"<<std::endl;
   auto global_z = gather_tool.gather_vector(z);
 
   if (gather_tool.mpi_rank == 0)
