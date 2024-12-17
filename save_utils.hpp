@@ -119,31 +119,6 @@ save_dofs_location(DoFHandler<dim> &dof_handler, IndexSet &locally_owned_dofs,
       y[i] = local_locations[i][1];
       z[i] = local_locations[i][2];
     }
-
-  /*
-  std::vector<int> per_proc_size(mpi_size);
-  MPI_Allgather(&local_size, 1, MPI_INT, per_proc_size.data(), 1,
-                MPI_INT, mpi_comm);
-
-  std::vector<int> displacement(mpi_size, 0);
-  for (unsigned int i = 1; i < mpi_size; i++)
-    {
-      displacement[i] = displacement[i - 1] + per_proc_size[i - 1];
-    }
-
-  std::vector<double> global_x;
-  std::vector<double> global_y;
-  std::vector<double> global_z;
-  std::vector<int> global_index;
-  if (mpi_rank == 0)
-    {
-      global_x.resize(dof_handler.n_dofs());
-      global_y.resize(dof_handler.n_dofs());
-      global_z.resize(dof_handler.n_dofs());
-      global_index.resize(dof_handler.n_dofs());
-    }
-  */
-
   auto global_x = gather_vector(mpi_rank, mpi_size, x, dof_handler.n_dofs(), mpi_comm);
   auto global_y = gather_vector(mpi_rank, mpi_size, y, dof_handler.n_dofs(), mpi_comm);
   auto global_z = gather_vector(mpi_rank, mpi_size, z, dof_handler.n_dofs(), mpi_comm);
