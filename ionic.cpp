@@ -6,20 +6,24 @@
 #include <vector>
 #include "save_utils.hpp"
 
-BuenoOrovio::BuenoOrovio(const Parameters &params)
+BuenoOrovio::BuenoOrovio(const Parameters &params,
+                        GatherTool &gather_tool)
   : params(params)
+  , gather_tool(gather_tool)
 {}
 
 void
 BuenoOrovio::setup(const IndexSet &locally_owned_dofs,
                    const IndexSet &locally_relevant_dofs,
-                   const double   &dt)
+                   const double   &dt
+                   )
 {
   TimerOutput::Scope t(timer, "Setup ionic model");
-
+  
   this->locally_owned_dofs    = locally_owned_dofs;
   this->locally_relevant_dofs = locally_relevant_dofs;
   this->dt                    = dt;
+  this->gather_tool           = gather_tool;
 
   for (unsigned int i = 0; i < N_VARS; ++i)
     {
@@ -145,7 +149,7 @@ BuenoOrovio::solve(const LinearAlgebra::distributed::Vector<double> &u_old,
 
       Iion[idx] = Iion_0d(u_old[idx], {{w[0][idx], w[1][idx], w[2][idx]}});
     }
-  save_snapshot(mpi_rank, mpi_size, w, time, locally_owned_dofs, mpi_comm);
+  save_snapshot(gather_tool, locally_owned_dofs, w, time);
   Iion.update_ghost_values();
 
   w_old = w;

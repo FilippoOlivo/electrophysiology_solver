@@ -17,6 +17,7 @@
 #include "common.hpp"
 #include "ionic.hpp"
 #include "save_utils.hpp"
+#include <optional>
 
 using namespace dealii;
 
@@ -77,6 +78,7 @@ private:
   output_results();
 
   const Parameters              &params;
+  GatherTool gather_tool;
   std::unique_ptr<BuenoOrovio>   ionic_model;
   std::unique_ptr<FEValues<dim>> fe_values;
 
@@ -104,6 +106,7 @@ private:
   const double dt;
   unsigned int time_step;
   const double time_end;
+
 };
 
 
@@ -112,7 +115,8 @@ Monodomain::Monodomain(const Parameters                 &solver_params,
                        const BuenoOrovio::Parameters    &ionic_model_params,
                        const AppliedCurrent::Parameters &applied_current_params)
   : params(solver_params)
-  , ionic_model(std::make_unique<BuenoOrovio>(ionic_model_params))
+  , gather_tool()
+  , ionic_model(std::make_unique<BuenoOrovio>(ionic_model_params, gather_tool))
   , Iapp(std::make_unique<AppliedCurrent>(applied_current_params))
   , tria(mpi_comm)
   , mapping(params.map_degree)
@@ -122,7 +126,6 @@ Monodomain::Monodomain(const Parameters                 &solver_params,
   , dt(params.dt)
   , time_step(0)
   , time_end(params.time_end)
-
 {}
 
 
@@ -161,7 +164,7 @@ Monodomain::setup()
   u_old.reinit(locally_owned_dofs, locally_relevant_dofs, mpi_comm);
   u.reinit(locally_owned_dofs, locally_relevant_dofs, mpi_comm);
   system_rhs.reinit(locally_owned_dofs, locally_relevant_dofs, mpi_comm);
-
+  gather_tool.setup(mpi_rank, mpi_size, dof_handler, mpi_comm);
   ionic_model->setup(locally_owned_dofs, locally_relevant_dofs, dt);
 }
 
@@ -376,7 +379,9 @@ Monodomain::run()
         << std::endl;
 
   setup();
-  save_dofs_location<dim>(dof_handler, locally_owned_dofs, mapping, mpi_rank, mpi_size, mpi_comm);
+
+  save_dofs_location<dim>(dof_handler, locally_owned_dofs, mapping, gather_tool);
+  MPI_Barrier(mpi_comm);
   pcout << "\tNumber of degrees of freedom: " << dof_handler.n_dofs()
         << std::endl;
 
