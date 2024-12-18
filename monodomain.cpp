@@ -17,7 +17,7 @@
 #include "common.hpp"
 #include "ionic.hpp"
 #include "save_utils.hpp"
-#include <optional>
+#include "create_graph.hpp"
 
 using namespace dealii;
 
@@ -416,8 +416,9 @@ Monodomain::run()
 
   setup();
 
-  save_dofs_location<dim>(dof_handler, locally_owned_dofs, mapping, gather_tool);
-  MPI_Barrier(mpi_comm);
+  GraphSaver graph_saver(mpi_rank, mpi_size, mpi_comm);
+  graph_saver.build_graph<dim>(dof_handler, mapping);
+
   pcout << "\tNumber of degrees of freedom: " << dof_handler.n_dofs()
         << std::endl;
 
@@ -433,7 +434,8 @@ Monodomain::run()
     {
       time += dt;
       Iapp->set_time(time);
-      ionic_model->solve(u_old, time);
+      ionic_model->solve(u_old);
+      graph_saver.save_snapshot(locally_owned_dofs, ionic_model->get_w(), time);
       assemble_time_terms();
       solve();
       pcout << "Solved at t = " << time << std::endl;
@@ -443,6 +445,7 @@ Monodomain::run()
       u_old = u;
     }
   pcout << std::endl;
+
 }
 
 void

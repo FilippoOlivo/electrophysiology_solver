@@ -4,7 +4,7 @@
 #include <fstream>
 #include <iostream>
 #include <vector>
-#include "save_utils.hpp"
+
 
 BuenoOrovio::BuenoOrovio(const Parameters &params,
                         GatherTool &gather_tool)
@@ -129,8 +129,7 @@ BuenoOrovio::solve_0d(const double                                   u_old,
 }
 
 void
-BuenoOrovio::solve(const LinearAlgebra::distributed::Vector<double> &u_old,
-                   const double time)
+BuenoOrovio::solve(const LinearAlgebra::distributed::Vector<double> &u_old)
 {
   TimerOutput::Scope t(timer, "Update w and Iion at DoFs");
 
@@ -149,7 +148,6 @@ BuenoOrovio::solve(const LinearAlgebra::distributed::Vector<double> &u_old,
 
       Iion[idx] = Iion_0d(u_old[idx], {{w[0][idx], w[1][idx], w[2][idx]}});
     }
-  save_snapshot(gather_tool, locally_owned_dofs, w, time);
   Iion.update_ghost_values();
 
   w_old = w;
