@@ -107,8 +107,12 @@ public:
   solve_0d(const double u_old, const std::array<double, N_VARS> &w) const;
 
   void
-  solve(const LinearAlgebra::distributed::Vector<double> &u_old,
-        const double time);
+  solve(const LinearAlgebra::distributed::Vector<double> &u_old);
+
+  std::array<LinearAlgebra::distributed::Vector<double>, N_VARS> get_w()
+  {
+    return w;
+  }
 
 private:
   IndexSet locally_owned_dofs;
