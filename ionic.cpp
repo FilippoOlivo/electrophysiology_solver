@@ -6,10 +6,8 @@
 #include <vector>
 
 
-BuenoOrovio::BuenoOrovio(const Parameters &params,
-                        GatherTool &gather_tool)
+BuenoOrovio::BuenoOrovio(const Parameters &params)
   : params(params)
-  , gather_tool(gather_tool)
 {}
 
 void
@@ -23,7 +21,6 @@ BuenoOrovio::setup(const IndexSet &locally_owned_dofs,
   this->locally_owned_dofs    = locally_owned_dofs;
   this->locally_relevant_dofs = locally_relevant_dofs;
   this->dt                    = dt;
-  this->gather_tool           = gather_tool;
 
   for (unsigned int i = 0; i < N_VARS; ++i)
     {

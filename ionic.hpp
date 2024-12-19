@@ -6,7 +6,6 @@
 
 #include "common.hpp"
 #include "utils.hpp"
-#include "save_utils.hpp"
 
 
 class BuenoOrovio : public Common
@@ -84,7 +83,7 @@ public:
 
   static inline constexpr unsigned int N_VARS = 3;
 
-  BuenoOrovio(const Parameters &params, GatherTool &gather_tool);
+  BuenoOrovio(const Parameters &params);
 
   void
   setup(const IndexSet &locally_owned_dofs,
@@ -126,5 +125,4 @@ private:
   LinearAlgebra::distributed::Vector<double> Iion;
 
   const Parameters &params;
-  GatherTool &gather_tool;
 };
