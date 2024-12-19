@@ -16,7 +16,6 @@
 #include "applied_current.hpp"
 #include "common.hpp"
 #include "ionic.hpp"
-#include "save_utils.hpp"
 #include "create_graph.hpp"
 
 using namespace dealii;
@@ -78,7 +77,6 @@ private:
   output_results();
 
   const Parameters              &params;
-  GatherTool gather_tool;
   std::unique_ptr<BuenoOrovio>   ionic_model;
   std::unique_ptr<FEValues<dim>> fe_values;
 
@@ -115,8 +113,7 @@ Monodomain::Monodomain(const Parameters                 &solver_params,
                        const BuenoOrovio::Parameters    &ionic_model_params,
                        const AppliedCurrent::Parameters &applied_current_params)
   : params(solver_params)
-  , gather_tool()
-  , ionic_model(std::make_unique<BuenoOrovio>(ionic_model_params, gather_tool))
+  , ionic_model(std::make_unique<BuenoOrovio>(ionic_model_params))
   , Iapp(std::make_unique<AppliedCurrent>(applied_current_params))
   , tria(mpi_comm)
   , mapping(params.map_degree)
@@ -164,7 +161,6 @@ Monodomain::setup()
   u_old.reinit(locally_owned_dofs, locally_relevant_dofs, mpi_comm);
   u.reinit(locally_owned_dofs, locally_relevant_dofs, mpi_comm);
   system_rhs.reinit(locally_owned_dofs, locally_relevant_dofs, mpi_comm);
-  gather_tool.setup(mpi_rank, mpi_size, dof_handler, mpi_comm);
   ionic_model->setup(locally_owned_dofs, locally_relevant_dofs, dt);
 }
 
@@ -393,13 +389,15 @@ Monodomain::run()
   system_matrix.copy_from(mass_matrix_dt);
   system_matrix.add(+1, laplace_matrix);
   amg_preconditioner.initialize(system_matrix);
-
+  output_results();
   while (time <= time_end)
     {
       time += dt;
       Iapp->set_time(time);
       ionic_model->solve(u_old);
-      graph_saver.save_snapshot(locally_owned_dofs, ionic_model->get_w(), time);
+      if (mpi_rank == 0)
+        graph_saver.save_snapshot(locally_owned_dofs, ionic_model->get_w(), time);
+      MPI_Barrier(mpi_comm);
       assemble_time_terms();
       solve();
       pcout << "Solved at t = " << time << std::endl;
