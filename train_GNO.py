@@ -1,35 +1,61 @@
 import torch
 
 from pina.trainer import Trainer
-
-from pina import LabelTensor, Condition, Graph
+import lightning
+from pina import Condition, Graph, TorchOptimizer
 from pina.problem import AbstractProblem
 from pina.solvers import SupervisedSolver
 from pina.model import GNO
+from tqdm import tqdm
+from lightning.pytorch.callbacks import EarlyStopping, ModelCheckpoint
 
 
-pos = torch.load('points_00.pt')
-pos = pos.to(torch.float32)
-times = torch.load('times.pt')
-times = times.to(torch.float32)
-edge_index = torch.load('edged_00.pt').T
-
-x =[torch.cat((pos, times[i].repeat(7900).unsqueeze(1)), dim=1) for i in range(len(times))]
-output_ = torch.load('output_00.pt')
-output_ = output_.to(torch.float32)
-data = Graph(x=x, pos=pos, edge_index=edge_index, build_edge_attr=True).data
+proc_numbers = ['00', '01', '02', '03', '04', '05']
+data = []
+output_ = None
+conditions = {}
+for file in tqdm(proc_numbers):
+    pos = torch.load('points_'+file+'.pt').to(torch.float32)
+    times = torch.load('times.pt').to(torch.float32)
+    edge_index = torch.load('edged_'+file+'.pt').T.to(torch.int64)
+    values = torch.load('output_'+file+'.pt').to(torch.float32)
+    output_ = values[1:,:,:]
+    x = [torch.cat((values[i,:,:], times[i].repeat(output_.shape[1]).unsqueeze(1)), dim=1) for i in range(len(times)-1)]
+    input_ = Graph(x=x, pos=pos, build_edge_attr=True, edge_index=edge_index).data
+    print(input_[0].edge_index.shape)
+    input_ = Graph(x=x, pos=pos, build_edge_attr=True, method="knn", k=4, undirected=True).data
+    print(input_[0].edge_index.shape)
+    conditions[file] = Condition(input_points=input_, output_points=output_)
 class GraphProblem(AbstractProblem):
-
     output_variables = None
-    conditions = {
-        'graph_data': Condition(input_points=data, output_points=output_)
-    }
+    conditions = conditions
 
-lifting_operator = torch.nn.Linear(in_features=5, out_features=32)
-projection_operator = torch.nn.Linear(in_features=32, out_features=3)
-model = GNO(lifting_operator=lifting_operator, projection_operator=projection_operator, n_layers=8)
+lifting_operator = torch.nn.Linear(in_features=4, out_features=16)
+projection_operator = torch.nn.Linear(in_features=16, out_features=3)
+model = GNO(node_features=4, edge_features=7, lifting_operator=lifting_operator, projection_operator=projection_operator, n_layers=2)
+fabric = lightning.Fabric(devices=1)
+model = torch.compile(model)
+model = fabric.setup(model)
 problem = GraphProblem()
-solver = SupervisedSolver(problem, model=model, use_lt=False)
-trainer = Trainer(solver, batch_size=32, accelerator='gpu')
+optimizer = TorchOptimizer(torch.optim.AdamW, lr=1e-3)
+solver = SupervisedSolver(problem, model=model, use_lt=False, optimizer=optimizer)
+
+early_stopping = EarlyStopping(
+    monitor="val_loss",
+    patience=15,
+    verbose=False,
+    mode="min"
+)
+checkpoint_callback = ModelCheckpoint(
+    monitor="val_loss",
+    dirpath="checkpoints/",
+    filename="best-model",
+    save_top_k=1,
+    mode="min",
+    verbose=False
+)
+
+trainer = Trainer(solver, batch_size=10, accelerator='gpu', max_epochs=500, val_size=0.25, train_size=0.75,
+                  test_size=0.0, callbacks=[early_stopping, checkpoint_callback])
 trainer.train()
 

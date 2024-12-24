@@ -9,6 +9,8 @@
 #include <set>
 #include <utility>
 
+#include "knn.hpp"
+
 class GraphSaver
 {
 public:
@@ -26,30 +28,55 @@ public:
     auto [global_to_local_map, local_points] =
       extract_local_points(dof_handler, mapping);
     save_points<double, dim>(local_points, "points");
+
+    KNN knn(4);
+    auto [edge_index, edge_attr] = knn.compute_knn(local_points);
+    /*
     std::set<std::pair<unsigned int, unsigned int>> unique_edges;
     for (const auto &cell : dof_handler.active_cell_iterators())
       {
+        std::vector<types::global_dof_index> local_dof_indices(
+          dof_handler.get_fe().dofs_per_cell);
+        cell->get_dof_indices(local_dof_indices);
         for (unsigned int l = 0; l < GeometryInfo<dim>::lines_per_cell; ++l)
           {
-            const auto   line  = cell->line(l);
-            unsigned int node0 = global_to_local_map[line->vertex_index(0)];
-            unsigned int node1 = global_to_local_map[line->vertex_index(1)];
+            const auto         line    = cell->line(l);
+            const unsigned int vertex0 = line->vertex_index(0);
+            const unsigned int vertex1 = line->vertex_index(1);
 
+            unsigned int local_vertex_index0 = 0, local_vertex_index1 = 0;
+            for (unsigned int v = 0; v < GeometryInfo<dim>::vertices_per_cell;
+                 ++v)
+              {
+                if (cell->vertex_index(v) == vertex0)
+                  local_vertex_index0 = v;
+                if (cell->vertex_index(v) == vertex1)
+                  local_vertex_index1 = v;
+              }
+            const unsigned int dof0 = local_dof_indices[local_vertex_index0];
+            const unsigned int dof1 = local_dof_indices[local_vertex_index1];
+
+            unsigned int node0 = global_to_local_map[dof0];
+            unsigned int node1 = global_to_local_map[dof1];
             unique_edges.insert(
               {std::min(node0, node1), std::max(node0, node1)});
           }
+
+
       }
+
     std::vector<std::vector<unsigned int>> edges(unique_edges.size(),
                                                  std::vector<unsigned int>(2));
     unsigned int                           i = 0;
     for (const auto &edge : unique_edges)
       {
         std::vector<unsigned int> edge_vector = {edge.first, edge.second};
-
-        edges[i] = edge_vector;
+        edges[i]                              = edge_vector;
         i++;
       }
-    save_points<unsigned int, 2>(edges, "edges");
+    */
+
+    save_points<unsigned int, 2>(edge_index, "edges");
   }
   void
   save_snapshot(IndexSet locally_owned_dofs,

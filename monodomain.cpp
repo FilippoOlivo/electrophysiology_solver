@@ -434,8 +434,8 @@ Monodomain::run()
       time += dt;
       Iapp->set_time(time);
       ionic_model->solve(u_old);
-      if (mpi_rank == 0)
-        graph_saver.save_snapshot(locally_owned_dofs, ionic_model->get_w(), time);
+
+      graph_saver.save_snapshot(locally_owned_dofs, ionic_model->get_w(), time);
       MPI_Barrier(mpi_comm);
       assemble_time_terms();
       solve();
