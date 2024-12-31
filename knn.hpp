@@ -80,13 +80,13 @@ private:
         indices[i] = i;
       }
 
-    // Use partial_sort to only sort the top k+1 elements
     std::partial_sort(indices.begin(),
-                      indices.begin() + k,
+                      indices.begin() + k + 1,
                       indices.end(),
                       [&values](unsigned int i1, unsigned int i2) {
                         return values[i1] < values[i2];
                       });
+    return std::vector<unsigned int>(indices.begin(), indices.begin() + k + 1);
 
     // Return only the top k+1 indices
     return std::vector<unsigned int>(indices.begin(), indices.begin() + k);
