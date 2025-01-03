@@ -7,6 +7,8 @@ from pina.model import GNO
 from tqdm import tqdm
 from lightning.pytorch.callbacks import EarlyStopping, ModelCheckpoint
 import argparse
+from lightning.pytorch.loggers import TensorBoardLogger
+
 
 def parse_command_line_arguments():
     parser = argparse.ArgumentParser()
@@ -17,7 +19,7 @@ def parse_command_line_arguments():
 def load_data():
     torch.manual_seed(1931)
     torch.cuda.manual_seed(1931)
-    proc_numbers = ['00', '01', '02', '03', '04', '05', '06', '07']#, '08', '09']
+    proc_numbers = ['00', '01', '02', '03', '04', '05', '06', '07']
     conditions = {}
     for file in tqdm(proc_numbers):
         pos = torch.load('points_'+file+'.pt', weights_only=False).to(torch.float32)
@@ -25,10 +27,8 @@ def load_data():
         edge_index = torch.load('edges_'+file+'.pt', weights_only=False).T.to(torch.int64)
         values = torch.load('output_'+file+'.pt', weights_only=False).to(torch.float32)
         attr = torch.load('attr_'+file+'.pt', weights_only=False).to(torch.float32)
-        print(attr.shape)
-        edge_attr = torch.cat([attr.unsqueeze(-1), pos[edge_index[0]], pos[edge_index[1]]], dim=-1)
+       	edge_attr = torch.cat([attr.unsqueeze(-1), pos[edge_index[0]], pos[edge_index[1]]], dim=-1)
         output_ = values[1:,:,:]
-        print(edge_attr.shape)
         x = [torch.cat((values[i,:,:], times[i].repeat(output_.shape[1]).unsqueeze(1)), dim=1) for i in range(len(times)-1)]
         input_ = Graph(x=x, pos=pos, build_edge_attr=False, edge_attr=edge_attr, edge_index=edge_index).data
         conditions[file] = Condition(input_points=input_, output_points=output_)
@@ -42,7 +42,7 @@ def define_solver(problem, n_layers, hidden_dim):
     solver = GraphSupervisedSolver(problem, model=model, optimizer=optimizer)
     return solver
 
-def train_model(solver):
+def train_model(solver, n_layers, hidden_dim):
     early_stopping = EarlyStopping(
         monitor="val_loss",
         patience=15,
@@ -51,15 +51,17 @@ def train_model(solver):
     )
     checkpoint_callback = ModelCheckpoint(
         monitor="val_loss",
-        dirpath="checkpoints/",
+        dirpath="checkpoints/"+ "n" + str(n_layers) + "_dim" + str(hidden_dim),
         filename="best-model",
         save_top_k=1,
         mode="min",
         verbose=False
     )
 
+    logger = TensorBoardLogger(save_dir='lightning_logs', name="n" + str(n_layers) + "_dim" + str(hidden_dim))
     trainer = Trainer(solver, batch_size=10, accelerator='gpu', max_epochs=500, val_size=0.25, train_size=0.75,
-                      test_size=0.0, callbacks=[early_stopping, checkpoint_callback], log_every_n_steps=0)
+                      test_size=0.0, callbacks=[early_stopping, checkpoint_callback], log_every_n_steps=0, 
+                      devices=2, strategy='ddp', logger=logger)
     trainer.train()
 
 if __name__ == '__main__':
@@ -72,6 +74,6 @@ if __name__ == '__main__':
         conditions = conditions
     problem = GraphProblem()
     solver = define_solver(problem, n_layers, hidden_dim)
-    train_model(solver)
+    train_model(solver, n_layers, hidden_dim)
 
 
