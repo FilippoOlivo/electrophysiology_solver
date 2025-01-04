@@ -5,6 +5,7 @@
 #include <deal.II/lac/la_parallel_vector.h>
 
 #include "common.hpp"
+#include "torch_inference.hpp"
 #include "utils.hpp"
 
 
@@ -86,9 +87,11 @@ public:
   BuenoOrovio(const Parameters &params);
 
   void
-  setup(const IndexSet &locally_owned_dofs,
-        const IndexSet &locally_relevant_dofs,
-        const double   &dt);
+  setup(const IndexSet                               &locally_owned_dofs,
+        const IndexSet                               &locally_relevant_dofs,
+        const double                                 &dt,
+        const std::vector<std::vector<unsigned int>> &edge_index,
+        const std::vector<std::vector<double>>       &edge_attr);
 
   std::array<double, N_VARS>
   alpha(const double u) const;
@@ -108,7 +111,11 @@ public:
   void
   solve(const LinearAlgebra::distributed::Vector<double> &u_old);
 
-  std::array<LinearAlgebra::distributed::Vector<double>, N_VARS> get_w()
+  void
+  solve_no(const LinearAlgebra::distributed::Vector<double> &u_old);
+
+  std::array<LinearAlgebra::distributed::Vector<double>, N_VARS>
+  get_w()
   {
     return w;
   }
@@ -123,6 +130,7 @@ private:
   std::array<LinearAlgebra::distributed::Vector<double>, N_VARS> w;
 
   LinearAlgebra::distributed::Vector<double> Iion;
-
-  const Parameters &params;
+  TorchInference                             torch_inference;
+  const Parameters                          &params;
+  torch::Tensor w_tensor;
 };

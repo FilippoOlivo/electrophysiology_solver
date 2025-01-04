@@ -1,14 +1,10 @@
 #include <deal.II/dofs/dof_tools.h>
-
 #include <deal.II/fe/fe_q.h>
-
 #include <cnpy.h>
 #include <mpi.h>
-
 #include <iostream>
 #include <set>
 #include <utility>
-
 #include "knn.hpp"
 
 class GraphSaver
@@ -22,23 +18,25 @@ public:
   {}
 
   template <int dim>
-  void
+  std::pair<std::vector<std::vector<unsigned int>>, std::vector<std::vector<double>>>
   build_graph(DoFHandler<dim> &dof_handler, MappingQ<dim> mapping)
   {
     auto [global_to_local_map, local_points] =
       extract_local_points(dof_handler, mapping);
-    save_points<double, dim>(local_points, "points");
+    //save_points<double, dim>(local_points, "points");
 
     KNN knn(6);
     auto [edge_index, edge_attr] = knn.compute_knn(local_points);
-    save_points<unsigned int, 2>(edge_index, "edges");
-    save_attr<double>(edge_attr);
+    //save_points<unsigned int, 2>(edge_index, "edges");
+    //save_attr<double>(edge_attr);
+    return std::make_pair(edge_index, edge_attr);
   }
   void
   save_snapshot(IndexSet locally_owned_dofs,
                 std::array<LinearAlgebra::distributed::Vector<double>, 3> vec,
                 double                                                    time)
   {
+
     std::vector<std::vector<double>> snapshot_vector(local_size,
                                                      std::vector<double>(3));
     unsigned int                     i = 0;
@@ -52,6 +50,7 @@ public:
     char buffer[30];
     snprintf(buffer, sizeof(buffer), "snapshot/%.4f_values", time);
     std::string filename(buffer);
+
     save_points<double, 3>(snapshot_vector, filename);
   }
 
@@ -99,6 +98,7 @@ private:
     snprintf(buffer, sizeof(buffer), "_%.2d.npy", mpi_rank);
     std::string end_filename(buffer);
     std::string filename = base_filename + end_filename;
+    std::cout << "Saving snapshot ... " << filename << " size: : " << points.size() << std::endl;
     cnpy::npy_save(filename, points_flatten.data(), {points.size(), dim}, "w");
   }
 

@@ -1,5 +1,4 @@
 #include <math.h>
-
 #include <algorithm>
 #include <iostream>
 #include <set>
@@ -15,7 +14,7 @@ public:
   {}
 
   template <int dim>
-  std::pair<std::vector<std::vector<unsigned int>>, std::vector<double>>
+  std::pair<std::vector<std::vector<unsigned int>>, std::vector<std::vector<double>>>
   compute_knn(std::vector<Point<dim>> &points)
   {
     unsigned int n = points.size();
@@ -27,14 +26,21 @@ public:
 
     std::vector<std::vector<unsigned int>> edge_index(
       n * k, std::vector<unsigned int>(2, 0));
-    std::vector<double> edge_distances(n * k, 0);
+    std::vector<std::vector<double>> edge_distances(n * k, std::vector<double>(7, 0));
     for (unsigned int i = 0; i < n; i++)
       {
         std::vector<unsigned int> sorted_idx(argsort(distance_matrix[i]));
         for (unsigned int j = 0; j < k; j++)
           {
             edge_index[i * k + j]     = {sorted_idx[j + 1], i};
-            edge_distances[i * k + j] = distance_matrix[i][j + 1];
+            edge_distances[i * k + j][0] = distance_matrix[i][j + 1];
+            edge_distances[i * k + j][1] = points[i][0];
+            edge_distances[i * k + j][2] = points[i][1];
+            edge_distances[i * k + j][3] = points[i][2];
+
+            edge_distances[i * k + j][4] = points[sorted_idx[j + 1]][0];
+            edge_distances[i * k + j][5] = points[sorted_idx[j + 1]][1];
+            edge_distances[i * k + j][6] = points[sorted_idx[j + 1]][2];
           }
       }
     return std::make_pair(edge_index, edge_distances);
