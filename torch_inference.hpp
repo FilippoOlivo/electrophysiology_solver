@@ -23,7 +23,7 @@ class TorchInference
 public:
   TorchInference() = default;
   TorchInference(std::string                            filename,
-                 std::vector<std::vector<unsigned int>> edge_index,
+                 std::vector<std::vector<int>> edge_index,
                  std::vector<std::vector<double>>       edge_attr);
 
   template <typename T>

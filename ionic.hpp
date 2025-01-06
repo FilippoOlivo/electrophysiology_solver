@@ -90,7 +90,7 @@ public:
   setup(const IndexSet                               &locally_owned_dofs,
         const IndexSet                               &locally_relevant_dofs,
         const double                                 &dt,
-        const std::vector<std::vector<unsigned int>> &edge_index,
+        const std::vector<std::vector<int>> &edge_index,
         const std::vector<std::vector<double>>       &edge_attr);
 
   std::array<double, N_VARS>

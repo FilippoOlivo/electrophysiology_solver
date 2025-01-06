@@ -16,7 +16,7 @@ void
 BuenoOrovio::setup(const IndexSet &locally_owned_dofs,
                    const IndexSet &locally_relevant_dofs,
                    const double   &dt,
-                   const std::vector<std::vector<unsigned int>> &edge_index,
+                   const std::vector<std::vector<int>> &edge_index,
                    const std::vector<std::vector<double>>       &edge_attr)
 {
   TimerOutput::Scope t(timer, "Setup ionic model");
@@ -36,9 +36,9 @@ BuenoOrovio::setup(const IndexSet &locally_owned_dofs,
   Iion.reinit(locally_owned_dofs, locally_relevant_dofs, mpi_comm);
   Iion = 0;
 
-  //torch_inference =
-  //  TorchInference("../scripted_model.pt", edge_index, edge_attr);
-  //w_tensor = torch_inference.to_tensor(w, this->locally_owned_dofs);
+  torch_inference =
+    TorchInference("../scripted_model.pt", edge_index, edge_attr);
+  w_tensor = torch_inference.to_tensor(w, this->locally_owned_dofs);
 }
 
 
@@ -157,16 +157,20 @@ BuenoOrovio::solve(const LinearAlgebra::distributed::Vector<double> &u_old)
   w_old = w;
 }
 
+
 void
 BuenoOrovio::solve_no(const LinearAlgebra::distributed::Vector<double> &u_old)
 {
-  w_tensor = torch_inference.run(w_tensor);
+  { 
+    TimerOutput::Scope t(timer, "Compute w");
+    w_tensor = torch_inference.run(w_tensor);
+  }
   Iion.zero_out_ghost_values();
   unsigned int i = 0;
   for (const types::global_dof_index idx : locally_owned_dofs)
   {
       Iion[idx] = Iion_0d(u_old[idx], {{w_tensor[i][0].item<double>(), w_tensor[i][1].item<double>(), w_tensor[i][2].item<double>()}});
   }
-
   Iion.update_ghost_values();
+  
 }

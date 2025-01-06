@@ -26,8 +26,7 @@ def load_data():
         times = torch.load('times.pt', weights_only=False).to(torch.float32)
         edge_index = torch.load('edges_'+file+'.pt', weights_only=False).T.to(torch.int64)
         values = torch.load('output_'+file+'.pt', weights_only=False).to(torch.float32)
-        attr = torch.load('attr_'+file+'.pt', weights_only=False).to(torch.float32)
-       	edge_attr = torch.cat([attr.unsqueeze(-1), pos[edge_index[0]], pos[edge_index[1]]], dim=-1)
+        edge_attr = torch.load('attr_'+file+'.pt', weights_only=False).to(torch.float32)    
         output_ = values[1:,:,:]
         x = [values[i,:,:] for i in range(len(times)-1)]
         input_ = Graph(x=x, pos=pos, build_edge_attr=False, edge_attr=edge_attr, edge_index=edge_index).data
@@ -37,7 +36,7 @@ def load_data():
 def define_solver(problem, n_layers, hidden_dim):
     lifting_operator = torch.nn.Linear(in_features=3, out_features=hidden_dim)
     projection_operator = torch.nn.Linear(in_features=hidden_dim, out_features=3)
-    model = GNO(node_features=3, edge_features=7, lifting_operator=lifting_operator, projection_operator=projection_operator, n_layers=n_layers)
+    model = GNO(edge_features=7, lifting_operator=lifting_operator, projection_operator=projection_operator, n_layers=n_layers)
     optimizer = TorchOptimizer(torch.optim.AdamW, lr=1e-3)
     solver = GraphSupervisedSolver(problem, model=model, optimizer=optimizer)
     return solver
@@ -60,9 +59,10 @@ def train_model(solver, n_layers, hidden_dim):
 
     logger = TensorBoardLogger(save_dir='lightning_logs', name="n" + str(n_layers) + "_dim" + str(hidden_dim))
     trainer = Trainer(solver, batch_size=10, accelerator='gpu', max_epochs=500, val_size=0.25, train_size=0.75,
-                      test_size=0.0, callbacks=[early_stopping, checkpoint_callback], log_every_n_steps=0, logger=logger,)
-                      #devices=2, strategy='ddp', )
+                      test_size=0.0, callbacks=[early_stopping, checkpoint_callback], log_every_n_steps=0, logger=logger,
+                      devices=2, strategy='ddp')
     trainer.train()
+
 
 if __name__ == '__main__':
     args = parse_command_line_arguments()

@@ -16,11 +16,14 @@ using namespace dealii;
 
 TorchInference::TorchInference(
   std::string                            filename,
-  std::vector<std::vector<unsigned int>> edge_index,
+  std::vector<std::vector<int>> edge_index,
   std::vector<std::vector<double>>       edge_attr)
   : edge_index(to_tensor(edge_index).transpose(0, 1).contiguous())
   , edge_attr(to_tensor(edge_attr).contiguous())
-  , model(std::make_shared<torch::jit::Module>(torch::jit::load(filename))) {};
+  , model(std::make_shared<torch::jit::Module>(torch::jit::load(filename))) {
+    torch::set_num_threads(4);
+    torch::NoGradGuard no_grad;
+  };
 
 template <typename T>
 torch::Tensor
@@ -82,7 +85,7 @@ TorchInference::get_tensor_type()
     {
       return torch::TensorOptions().dtype(torch::kFloat32);
     }
-  else if constexpr (std::is_same_v<T, unsigned int>)
+  else if constexpr (std::is_same_v<T, int>)
     {
       return torch::TensorOptions().dtype(torch::kInt64);
     }
@@ -96,5 +99,6 @@ TorchInference::run(torch::Tensor x)
   inputs.push_back(edge_index);
   inputs.push_back(edge_attr);
   auto output = model->forward(inputs).toTensor();
+
   return output;
 }

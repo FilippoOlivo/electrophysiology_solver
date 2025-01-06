@@ -416,8 +416,8 @@ Monodomain::run()
         << std::endl;
 
   setup();
-  //GraphSaver graph_saver(mpi_rank, mpi_size, mpi_comm);
-  //graph_saver.build_graph<dim>(dof_handler, mapping);
+  GraphSaver graph_saver(mpi_rank, mpi_size, mpi_comm);
+  graph_saver.build_graph<dim>(dof_handler, mapping);
   pcout << "\tNumber of degrees of freedom: " << dof_handler.n_dofs()
         << std::endl;
 
@@ -429,26 +429,28 @@ Monodomain::run()
   system_matrix.add(+1, laplace_matrix);
   amg_preconditioner.initialize(system_matrix);
   output_results();
-  //std::cout<<time<<std::endl;
-  //graph_saver.save_snapshot(locally_owned_dofs, ionic_model->get_w(), time);
-
+  std::cout<<time<<std::endl;
+  
+  //graph_saver.save_snapshot(locally_owned_dofs, u, time, "_u");
+  
   while (time <= time_end)
     {
       time += dt;
       Iapp->set_time(time);
-
-      ionic_model->solve_no(u_old);
-      //ionic_model->solve(u_old);
+      //ionic_model->solve_no(u_old);
+      ionic_model->solve(u_old);
+      graph_saver.save_snapshot(locally_owned_dofs, ionic_model->w, time);
       assemble_time_terms();
       solve();
       pcout << "Solved at t = " << time << std::endl;
       ++time_step;
       if ((time_step % 10 == 0))
         output_results();
+      //graph_saver.save_snapshot(locally_owned_dofs, u, time, "_u");
       u_old = u;
     }
   pcout << std::endl;
-
+  
 }
 
 void
