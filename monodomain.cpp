@@ -429,10 +429,9 @@ Monodomain::run()
   system_matrix.add(+1, laplace_matrix);
   amg_preconditioner.initialize(system_matrix);
   output_results();
-  std::cout<<time<<std::endl;
   
   //graph_saver.save_snapshot(locally_owned_dofs, u, time, "_u");
-  
+  graph_saver.save_snapshot(locally_owned_dofs, ionic_model->w, time);
   while (time <= time_end)
     {
       time += dt;

@@ -87,11 +87,11 @@ public:
   BuenoOrovio(const Parameters &params);
 
   void
-  setup(const IndexSet                               &locally_owned_dofs,
-        const IndexSet                               &locally_relevant_dofs,
-        const double                                 &dt,
-        const std::vector<std::vector<int>> &edge_index,
-        const std::vector<std::vector<double>>       &edge_attr);
+  setup(const IndexSet                         &locally_owned_dofs,
+        const IndexSet                         &locally_relevant_dofs,
+        const double                           &dt,
+        const std::vector<std::vector<int>>    &edge_index,
+        const std::vector<std::vector<double>> &edge_attr);
 
   std::array<double, N_VARS>
   alpha(const double u) const;
@@ -132,5 +132,5 @@ private:
   LinearAlgebra::distributed::Vector<double> Iion;
   TorchInference                             torch_inference;
   const Parameters                          &params;
-  torch::Tensor w_tensor;
+  torch::Tensor                              w_tensor;
 };

@@ -21,8 +21,8 @@ for n in proc_numbers:
     edge_attr = list(edge_attr.parameters())[0]
     torch.save(edge_attr, 'attr.pt')
     directory = directory + 'snapshot/'
-    file_names = [f for f in os.listdir(directory) if os.path.isfile(os.path.join(directory, f)) and f.endswith(n+'.pt')]
 
+    file_names = [f for f in os.listdir(directory) if os.path.isfile(os.path.join(directory, f)) and f.endswith(n+'.pt')]
     for file in tqdm(file_names):
         times.append(float(file.replace('_values_'+n+'.pt', '')))
         tensor = torch.jit.load(directory + file)
