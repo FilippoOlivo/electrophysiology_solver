@@ -1,8 +1,6 @@
 #include <deal.II/dofs/dof_tools.h>
 
 #include <deal.II/fe/fe_q.h>
-
-#include <cnpy.h>
 #include <mpi.h>
 
 #include <iostream>
@@ -34,26 +32,26 @@ public:
     save_points<double>(edge_attr, "attr");
     return std::make_pair(edge_index, edge_attr);
   }
+  
   void
   save_snapshot(IndexSet locally_owned_dofs,
                 std::array<LinearAlgebra::distributed::Vector<double>, 3> vec,
                 double                                                    time)
   {
-    std::vector<std::vector<double>> snapshot_vector(local_size,
-                                                     std::vector<double>(3));
+    
+    torch::Tensor snapshot_tensor = torch::zeros({static_cast<int64_t>(local_size),3}, torch::kDouble);
     int                              i = 0;
     for (auto idx : locally_owned_dofs)
       {
         std::vector<double> temp(3);
         for (int j = 0; j < 3; j++)
-          snapshot_vector[i][j] = vec[j][idx];
+          snapshot_tensor[i][j] = vec[j][idx];
         i++;
       }
     char buffer[30];
-    snprintf(buffer, sizeof(buffer), "snapshot/%.4f_values", time);
+    snprintf(buffer, sizeof(buffer), "snapshot/%.5f_w_%02d.pt", time, mpi_rank);
     std::string filename(buffer);
-
-    save_points<double>(snapshot_vector, filename);
+    torch::save(snapshot_tensor, filename);
   }
 
   void
@@ -62,7 +60,7 @@ public:
                 double                                     time,
                 std::string                                filename)
   {
-    std::vector<double> snapshot_vector(local_size, 0);
+    torch::Tensor snapshot_vector = torch::ones({local_size}, torch::kDouble);
     int                 i = 0;
     for (auto idx : locally_owned_dofs)
       {
@@ -70,18 +68,14 @@ public:
         ++i;
       }
     char buffer[30];
-    snprintf(buffer, sizeof(buffer), "snapshot/%.4f", time);
+    snprintf(buffer, sizeof(buffer), "snapshot/%.5f", time);
     std::string start_filename(buffer);
     filename = start_filename + filename;
-    // save_points<double>(snapshot_vector, filename);
     char buffer2[40];
-    snprintf(buffer2, sizeof(buffer2), "_%.2d.npy", mpi_rank);
+    snprintf(buffer2, sizeof(buffer2), "_%.2d.pt", mpi_rank);
     std::string end_filename(buffer2);
     std::string filename2 = filename + end_filename;
-    cnpy::npy_save(filename2,
-                   snapshot_vector.data(),
-                   {snapshot_vector.size()},
-                   "w");
+    torch::save(snapshot_vector, filename2);
   }
 
 private:

@@ -35,10 +35,10 @@ BuenoOrovio::setup(const IndexSet                      &locally_owned_dofs,
 
   Iion.reinit(locally_owned_dofs, locally_relevant_dofs, mpi_comm);
   Iion = 0;
-
-  // torch_inference =
-  //   TorchInference("../scripted_model.pt", edge_index, edge_attr);
-  // w_tensor = torch_inference.to_tensor(w, this->locally_owned_dofs);
+  torch_inference = TorchInference("../scripted_model_u.pt", edge_index, edge_attr, w[0].locally_owned_size());
+  w_tensor = torch_inference.to_tensor(w, this->locally_owned_dofs);
+  u_old_tensor = torch::ones({w[0].locally_owned_size(), 1}, torch::kDouble);
+  w_params = torch::ones({w[0].locally_owned_size(), 9}, torch::kDouble);
 }
 
 
@@ -94,7 +94,7 @@ double
 BuenoOrovio::Iion_0d(const double                                   u_old,
                      const std::array<double, BuenoOrovio::N_VARS> &w) const
 {
-  TimerOutput::Scope t(timer, "Compute Iion");
+  //TimerOutput::Scope t(timer, "Compute Iion");
 
   const double Iion_val =
     utils::heaviside_sharp(u_old, params.V1) * (u_old - params.V1) *
@@ -114,7 +114,8 @@ BuenoOrovio::Iion_0d(const double                                   u_old,
 
 std::array<double, BuenoOrovio::N_VARS>
 BuenoOrovio::solve_0d(const double                                   u_old,
-                      const std::array<double, BuenoOrovio::N_VARS> &w) const
+                      const std::array<double, BuenoOrovio::N_VARS> &w,
+                      unsigned int j) const
 {
   TimerOutput::Scope t(timer, "Compute w");
 
@@ -124,9 +125,14 @@ BuenoOrovio::solve_0d(const double                                   u_old,
   std::array<double, 3> b      = beta(u_old);
   std::array<double, 3> w_infs = w_inf(u_old);
 
+
+
   for (unsigned int i = 0; i < N_VARS; ++i)
     {
       w_new[i] = w[i] + dt * ((b[i] - a[i]) * w[i] + a[i] * w_infs[i]);
+        this->w_params[j][i] = a[i];
+        this->w_params[j][i+3] = b[i]; 
+        this->w_params[j][i+6] = w_infs[i];
     }
 
   return w_new;
@@ -140,10 +146,11 @@ BuenoOrovio::solve(const LinearAlgebra::distributed::Vector<double> &u_old)
   // update w from t_n to t_{n+1} on the locally owned DoFs for all w's
   // On top of that, evaluate Iion at DoFs
   Iion.zero_out_ghost_values();
+  unsigned int i = 0;
   for (const types::global_dof_index idx : locally_owned_dofs)
     {
       std::array<double, N_VARS> w_new =
-        solve_0d(u_old[idx], {{w_old[0][idx], w_old[1][idx], w_old[2][idx]}});
+        solve_0d(u_old[idx], {{w_old[0][idx], w_old[1][idx], w_old[2][idx]}}, i);
 
       for (unsigned int i = 0; i < N_VARS; ++i)
         {
@@ -157,22 +164,59 @@ BuenoOrovio::solve(const LinearAlgebra::distributed::Vector<double> &u_old)
   w_old = w;
 }
 
-
+/*
 void
-BuenoOrovio::solve_no(const LinearAlgebra::distributed::Vector<double> &u_old)
-{
-  {
-    TimerOutput::Scope t(timer, "Compute w");
-    w_tensor = torch_inference.run(w_tensor);
-  }
+BuenoOrovio::solve_no(const LinearAlgebra::distributed::Vector<double> &u_old, double time)
+{ 
+  torch::NoGradGuard no_grad;
+    
+    for (const types::global_dof_index idx : locally_owned_dofs)
+    {
+      u_old_tensor[i][0] = u_old[idx];
+      i++;
+    }
+    
+    //w_tensor = torch::cat({w_tensor, u_old_tensor}, -1);
+  torch_inference.run(w_tensor);
+  auto w_data = w_tensor.accessor<double, 2>();
   Iion.zero_out_ghost_values();
   unsigned int i = 0;
   for (const types::global_dof_index idx : locally_owned_dofs)
     {
       Iion[idx] = Iion_0d(u_old[idx],
-                          {{w_tensor[i][0].item<double>(),
-                            w_tensor[i][1].item<double>(),
-                            w_tensor[i][2].item<double>()}});
+                          {{w_data[i][0],
+                            w_data[i][1],
+                            w_data[i][2]}});
+    }
+  Iion.update_ghost_values();
+}
+*/
+
+
+void
+BuenoOrovio::solve_no(const LinearAlgebra::distributed::Vector<double> &u_old)
+{ 
+  
+  torch::NoGradGuard no_grad;
+  unsigned int i = 0;
+  
+  for (const types::global_dof_index idx : locally_owned_dofs)
+  {
+    u_old_tensor[i][0] = u_old[idx];
+    i++;
+  }
+  //w_tensor = torch::cat({u_old_tensor, w_tensor}, -1);
+  
+  torch_inference.run(w_tensor, u_old_tensor);
+  auto w_data = w_tensor.accessor<double, 2>();
+  Iion.zero_out_ghost_values();
+  i = 0;
+  for (const types::global_dof_index idx : locally_owned_dofs)
+    {
+      Iion[idx] = Iion_0d(u_old[idx],
+                          {{w_data[i][0],
+                            w_data[i][1],
+                            w_data[i][2]}});
     }
   Iion.update_ghost_values();
 }

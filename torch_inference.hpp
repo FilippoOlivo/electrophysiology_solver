@@ -24,7 +24,8 @@ public:
   TorchInference() = default;
   TorchInference(std::string                            filename,
                  std::vector<std::vector<int>> edge_index,
-                 std::vector<std::vector<double>>       edge_attr);
+                 std::vector<std::vector<double>>       edge_attr,
+                 int n_elements);
 
   template <typename T>
   torch::Tensor
@@ -39,14 +40,21 @@ public:
     std::array<dealii::LinearAlgebra::distributed::Vector<double>, 3> &vector,
     IndexSet &locally_owned_dofs);
 
-  torch::Tensor
-  run(torch::Tensor x);
+  void
+  run(torch::Tensor &x, double time);
+
+  void
+  run(torch::Tensor &x);
+
+  void
+  run(torch::Tensor &res, torch::Tensor &x);
 
 private:
   torch::Tensor                       edge_index;
   torch::Tensor                       edge_attr;
   std::shared_ptr<torch::jit::Module> model;
-
+  std::vector<torch::jit::IValue> inputs;
+  int n_elements;
   template <typename T>
   auto
   get_tensor_type();

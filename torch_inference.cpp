@@ -16,13 +16,18 @@ using namespace dealii;
 
 TorchInference::TorchInference(
   std::string                            filename,
-  std::vector<std::vector<int>> edge_index,
-  std::vector<std::vector<double>>       edge_attr)
+  std::vector<std::vector<int>>          edge_index,
+  std::vector<std::vector<double>>       edge_attr,
+  int n_elements)
   : edge_index(to_tensor(edge_index).transpose(0, 1).contiguous())
   , edge_attr(to_tensor(edge_attr).contiguous())
-  , model(std::make_shared<torch::jit::Module>(torch::jit::load(filename))) {
-    torch::set_num_threads(4);
-    torch::NoGradGuard no_grad;
+  , model(std::make_shared<torch::jit::Module>(torch::jit::load(filename)))
+  {  
+    inputs.resize(3);
+    inputs[1] = this->edge_index;
+    inputs[2] = this->edge_attr;
+    //inputs[3] = torch::ones({n_elements, 1});
+    this->n_elements = n_elements;
   };
 
 template <typename T>
@@ -64,9 +69,8 @@ TorchInference::to_tensor(
   std::array<LinearAlgebra::distributed::Vector<double>, 3> &vector,
   IndexSet                                                  &locally_owned_dofs)
 {
-  long int      size   = vector[0].size();
   long int      n_dims = vector.size();
-  torch::Tensor tensor = torch::ones({size, n_dims});
+  torch::Tensor tensor = torch::ones({n_elements, n_dims}, torch::kDouble);
   long int      i      = 0;
   for (auto idx : locally_owned_dofs)
     {
@@ -83,7 +87,7 @@ TorchInference::get_tensor_type()
 {
   if constexpr (std::is_same_v<T, double> || std::is_same_v<T, float>)
     {
-      return torch::TensorOptions().dtype(torch::kFloat32);
+      return torch::TensorOptions().dtype(torch::kDouble);
     }
   else if constexpr (std::is_same_v<T, int>)
     {
@@ -91,14 +95,28 @@ TorchInference::get_tensor_type()
     }
 }
 
-torch::Tensor
-TorchInference::run(torch::Tensor x)
-{
-  std::vector<torch::jit::IValue> inputs;
-  inputs.push_back(x);
-  inputs.push_back(edge_index);
-  inputs.push_back(edge_attr);
-  auto output = model->forward(inputs).toTensor();
+void
+TorchInference::run(torch::Tensor &x, double time)
+{ 
+  at::Tensor tensor = inputs[3].toTensor();
+  for (int i = 0; i < n_elements; ++i) {
+    tensor[i][0] = time; // Assuming a 2D tensor with shape [n_elements, ...]
+  }
+  inputs[0] = x;
+  inputs[3] = tensor;
+  x = model->forward(inputs).toTensor();
+}
 
-  return output;
+void 
+TorchInference::run(torch::Tensor &x)
+{
+  inputs[0] = x;
+  x = model->forward(inputs).toTensor();
+}
+
+void
+TorchInference::run(torch::Tensor &res, torch::Tensor &x)
+{ 
+  inputs[0] = x;
+  res = model->forward(inputs).toTensor();
 }

@@ -17,7 +17,7 @@
 #include "common.hpp"
 #include "ionic.hpp"
 #include "create_graph.hpp"
-
+#include "save_utils.hpp"
 using namespace dealii;
 
 class Monodomain : public Common
@@ -430,26 +430,39 @@ Monodomain::run()
   amg_preconditioner.initialize(system_matrix);
   output_results();
   
-  //graph_saver.save_snapshot(locally_owned_dofs, u, time, "_u");
-  graph_saver.save_snapshot(locally_owned_dofs, ionic_model->w, time);
+  graph_saver.save_snapshot(locally_owned_dofs, u, time, "_u");
+  //graph_saver.save_snapshot(locally_owned_dofs, ionic_model->w, time);
+  GatherTool gather_tool;
+  gather_tool.setup<3>(mpi_rank, mpi_size, dof_handler, mpi_comm);
   while (time <= time_end)
     {
       time += dt;
       Iapp->set_time(time);
-      //ionic_model->solve_no(u_old);
-      ionic_model->solve(u_old);
-      graph_saver.save_snapshot(locally_owned_dofs, ionic_model->w, time);
+      TimerOutput::Scope t(timer, "Run Ionic update");
+      {
+        //ionic_model->solve(u_old);
+        ionic_model->solve_no(u_old);
+      }
+      
       assemble_time_terms();
       solve();
       pcout << "Solved at t = " << time << std::endl;
       ++time_step;
       if ((time_step % 10 == 0))
+      {
         output_results();
-      //graph_saver.save_snapshot(locally_owned_dofs, u, time, "_u");
+      }
+      //graph_saver.save_snapshot(locally_owned_dofs, ionic_model->get_w(), time);
+      graph_saver.save_snapshot(locally_owned_dofs, u, time, "_u");
+
+      
+      char buffer[50];
+      snprintf(buffer, sizeof(buffer), "snapshot/%.5f_w_%.2d.pt",time, mpi_rank);
+      std::string filename(buffer);
+      torch::save(ionic_model->get_w_tensor(), filename);
+      
       u_old = u;
     }
-  pcout << std::endl;
-  
 }
 
 void
@@ -618,6 +631,7 @@ Monodomain::run()
 int
 main(int argc, char *argv[])
 {
+  std::cout << std::fixed << std::setprecision(10);
   Utilities::MPI::MPI_InitFinalize mpi_initialization(argc, argv, 1);
 
   Monodomain::Parameters     monodomain_params;

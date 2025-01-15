@@ -106,7 +106,7 @@ public:
   Iion_0d(const double u_old, const std::array<double, N_VARS> &w) const;
 
   std::array<double, N_VARS>
-  solve_0d(const double u_old, const std::array<double, N_VARS> &w) const;
+  solve_0d(const double u_old, const std::array<double, N_VARS> &w, unsigned int j) const;
 
   void
   solve(const LinearAlgebra::distributed::Vector<double> &u_old);
@@ -118,6 +118,18 @@ public:
   get_w()
   {
     return w;
+  }
+
+  torch::Tensor
+  get_w_params()
+  {
+    return w_params;
+  }
+  
+  torch::Tensor
+  get_w_tensor()
+  {
+    return w_tensor;
   }
 
 private:
@@ -133,4 +145,7 @@ private:
   TorchInference                             torch_inference;
   const Parameters                          &params;
   torch::Tensor                              w_tensor;
+  torch::Tensor u_old_tensor;
+  torch::Tensor w_params;
 };
+
