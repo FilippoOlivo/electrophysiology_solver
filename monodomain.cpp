@@ -422,7 +422,6 @@ Monodomain::run()
       TimerOutput::Scope t(timer, "Run Ionic update");
       {
         ionic_model->solve(u_old);
-        // ionic_model->solve_no(u_old, time);
       }
 
       assemble_time_terms();
@@ -433,15 +432,6 @@ Monodomain::run()
         {
           output_results();
         }
-      // graph_saver.save_snapshot(locally_owned_dofs, ionic_model->get_w(),
-      // time); graph_saver.save_snapshot(locally_owned_dofs, u, time, "_u");
-
-      /*
-      char buffer[50];
-      snprintf(buffer, sizeof(buffer), "snapshot/%.5f_w_%.2d.pt",time,
-      mpi_rank); std::string filename(buffer);
-      torch::save(ionic_model->get_w_tensor(), filename);
-      */
       u_old = u;
     }
 }
