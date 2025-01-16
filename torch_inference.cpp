@@ -26,7 +26,6 @@ TorchInference::TorchInference(
     inputs.resize(3);
     inputs[1] = this->edge_index;
     inputs[2] = this->edge_attr;
-    //inputs[3] = torch::ones({n_elements, 1});
     this->n_elements = n_elements;
   };
 
@@ -96,15 +95,15 @@ TorchInference::get_tensor_type()
 }
 
 void
-TorchInference::run(torch::Tensor &x, double time)
+TorchInference::run(torch::Tensor &res, torch::Tensor &x,  double time)
 { 
   at::Tensor tensor = inputs[3].toTensor();
   for (int i = 0; i < n_elements; ++i) {
-    tensor[i][0] = time; // Assuming a 2D tensor with shape [n_elements, ...]
+    tensor[i][0] = time;
   }
   inputs[0] = x;
   inputs[3] = tensor;
-  x = model->forward(inputs).toTensor();
+  res = model->forward(inputs).toTensor();
 }
 
 void 

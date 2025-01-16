@@ -41,7 +41,7 @@ public:
     IndexSet &locally_owned_dofs);
 
   void
-  run(torch::Tensor &x, double time);
+  run(torch::Tensor &res, torch::Tensor &x, double time);
 
   void
   run(torch::Tensor &x);

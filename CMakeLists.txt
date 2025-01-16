@@ -9,10 +9,6 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(OUTPUT_DIR "${CMAKE_BINARY_DIR}/snapshot")
 file(MAKE_DIRECTORY ${OUTPUT_DIR})
 
-set(CNPY_DIR "$ENV{HOME}/cnpy/")
-set(CMAKE_PREFIX_PATH "$ENV{HOME}/libtorch")
-set(CMAKE_INSTALL_RPATH "${CMAKE_PREFIX_PATH}/lib")
-
 
 find_package(Torch REQUIRED)
 
@@ -27,22 +23,11 @@ find_package(deal.II 9.6.0 REQUIRED
 )
 
 
-include_directories(
-        ${CNPY_DIR}/include
-        ${TORCH_INCLUDE_DIRS}
-)
-
-link_directories(
-        ${CNPY_DIR}/lib
-		$ENV{HOME}/zlib/lib/
-)
-
 set(TARGET_SRC
         monodomain.cpp
         applied_current.cpp
         ionic.cpp
         utils.cpp
-	 	torch_inference.cpp
 )
 
 add_compile_options(-fvisibility=hidden)
@@ -52,9 +37,6 @@ add_link_options(-fvisibility=hidden)
 add_executable(${PROJECT_NAME} ${TARGET_SRC})
 target_link_libraries(${PROJECT_NAME}
         ${DEAL_II_LIBRARIES}
-        ${TORCH_LIBRARIES}
-        cnpy
-        z
 )
 
 deal_ii_initialize_cached_variables()

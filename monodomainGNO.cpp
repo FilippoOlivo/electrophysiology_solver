@@ -23,7 +23,7 @@
 
 #include "applied_current.hpp"
 #include "common.hpp"
-#include "ionic.hpp"
+#include "ionic_nn.hpp"
 using namespace dealii;
 
 class Monodomain : public Common
@@ -49,7 +49,6 @@ public:
     {
       add_parameter("fe_degree", fe_degree, "Finite Element degree");
       add_parameter("map_degree", map_degree, "Mapping degree");
-      add_parameter("map_degree", map_degree, "Mapping degree");
       add_parameter("dt", dt, "Time step");
       add_parameter("time_end", time_end, "Final time");
       add_parameter("sigma", sigma, "Conductivity");
@@ -60,7 +59,7 @@ public:
   };
 
   Monodomain(const Parameters                 &solver_params,
-             const BuenoOrovio::Parameters    &ionic_model_params,
+             const BuenoOrovioGNO::Parameters &ionic_model_params,
              const AppliedCurrent::Parameters &applied_current_params);
 
   void
@@ -81,18 +80,9 @@ private:
   void
   output_results();
 
-  const Parameters              &params;
-  std::unique_ptr<BuenoOrovio>   ionic_model;
-  std::unique_ptr<FEValues<dim>> fe_values;
-
-  const Parameters              &params;
-  std::unique_ptr<BuenoOrovio>   ionic_model;
-  std::unique_ptr<FEValues<dim>> fe_values;
-
-  const Parameters              &params;
-  GatherTool gather_tool;
-  std::unique_ptr<BuenoOrovio>   ionic_model;
-  std::unique_ptr<FEValues<dim>> fe_values;
+  const Parameters               &params;
+  std::unique_ptr<BuenoOrovioGNO> ionic_model;
+  std::unique_ptr<FEValues<dim>>  fe_values;
 
   std::unique_ptr<Function<dim>>                 Iapp;
   parallel::fullydistributed::Triangulation<dim> tria;
@@ -123,15 +113,10 @@ private:
 
 
 Monodomain::Monodomain(const Parameters                 &solver_params,
-                       const BuenoOrovio::Parameters    &ionic_model_params,
+                       const BuenoOrovioGNO::Parameters &ionic_model_params,
                        const AppliedCurrent::Parameters &applied_current_params)
   : params(solver_params)
-  , ionic_model(std::make_unique<BuenoOrovio>(ionic_model_params))
-Monodomain::Monodomain(const Parameters                 &solver_params,
-                       const BuenoOrovio::Parameters    &ionic_model_params,
-                       const AppliedCurrent::Parameters &applied_current_params)
-  : params(solver_params)
-  , ionic_model(std::make_unique<BuenoOrovio>(ionic_model_params))
+  , ionic_model(std::make_unique<BuenoOrovioGNO>(ionic_model_params))
   , Iapp(std::make_unique<AppliedCurrent>(applied_current_params))
   , tria(mpi_comm)
   , mapping(params.map_degree)
@@ -180,7 +165,10 @@ Monodomain::setup()
   u.reinit(locally_owned_dofs, locally_relevant_dofs, mpi_comm);
   system_rhs.reinit(locally_owned_dofs, locally_relevant_dofs, mpi_comm);
 
-  ionic_model->setup(locally_owned_dofs, locally_relevant_dofs, dt);
+  ionic_model->setup(locally_owned_dofs,
+                     locally_relevant_dofs,
+                     dof_handler,
+                     mapping);
 }
 
 
@@ -324,16 +312,6 @@ Monodomain::output_results()
   data_out.add_data_vector(u,
                            "transmembrane_potential",
                            DataOut<dim>::type_dof_data);
-
-  //
-  for (unsigned int i = 0; i < ionic_model->w.size(); ++i)
-  for (unsigned int i = 0; i < ionic_model->w.size(); ++i)
-    {
-      data_out.add_data_vector(ionic_model->w[i],
-      data_out.add_data_vector(ionic_model->w[i],
-                               "w" + std::to_string(i),
-                               DataOut<dim>::type_dof_data);
-    }
   Vector<float> subdomain(tria.n_active_cells());
   for (unsigned int i = 0; i < subdomain.size(); ++i)
     subdomain(i) = tria.locally_owned_subdomain();
@@ -421,8 +399,7 @@ Monodomain::run()
       Iapp->set_time(time);
       TimerOutput::Scope t(timer, "Run Ionic update");
       {
-        ionic_model->solve(u_old);
-        // ionic_model->solve_no(u_old, time);
+        ionic_model->solve_w(u_old);
       }
 
       assemble_time_terms();
@@ -433,8 +410,6 @@ Monodomain::run()
         {
           output_results();
         }
-      // graph_saver.save_snapshot(locally_owned_dofs, ionic_model->get_w(),
-      // time); graph_saver.save_snapshot(locally_owned_dofs, u, time, "_u");
 
       /*
       char buffer[50];
@@ -446,169 +421,6 @@ Monodomain::run()
     }
 }
 
-void
-Monodomain::save_dofs_location()
-{
-  std::map<types::global_dof_index, Point<3>> locations = DoFTools::map_dofs_to_support_points(mapping, dof_handler);
-  std::vector<Point<3>> local_locations(locally_owned_dofs.size());
-  unsigned int i = 0;
-  for (auto idx : locally_owned_dofs)
-    {
-      local_locations[i] = locations[idx];
-      ++i;
-    }
-  std::vector<double> x(dof_handler.n_locally_owned_dofs());
-  std::vector<double> y(dof_handler.n_locally_owned_dofs());
-  std::vector<double> z(dof_handler.n_locally_owned_dofs());
-  std::vector<int> local_index(dof_handler.n_locally_owned_dofs());
-
-  for (unsigned int i=0; i<dof_handler.n_locally_owned_dofs(); i++)
-    {
-      x[i] = local_locations[i][0];
-      y[i] = local_locations[i][1];
-      z[i] = local_locations[i][2];
-    }
-  int local_size = dof_handler.n_locally_owned_dofs();
-
-  std::vector<int> per_proc_size(mpi_size);
-  MPI_Allgather(&local_size, 1, MPI_INT, per_proc_size.data(), 1,
-                MPI_INT, mpi_comm);
-
-  std::vector<int> displacement(mpi_size, 0);
-  for (unsigned int i = 1; i < mpi_size; i++)
-    {
-      displacement[i] = displacement[i - 1] + per_proc_size[i - 1];
-    }
-
-  std::vector<double> global_x;
-  std::vector<double> global_y;
-  std::vector<double> global_z;
-  std::vector<int> global_index;
-  if (mpi_rank == 0)
-    {
-      global_x.resize(dof_handler.n_dofs());
-      global_y.resize(dof_handler.n_dofs());
-      global_z.resize(dof_handler.n_dofs());
-      global_index.resize(dof_handler.n_dofs());
-    }
-
-  MPI_Gatherv(x.data(), // send buffer
-           local_size, // send size
-           MPI_DOUBLE, // type
-           mpi_rank == 0 ? global_x.data() : nullptr, // receive buffer
-           per_proc_size.data(), // receive size
-           displacement.data(),
-           MPI_DOUBLE, // receive type
-           0, // main processor
-           mpi_comm // MPI Comminicator
-           );
-  MPI_Gatherv(y.data(), // send buffer
-         local_size, // send size
-         MPI_DOUBLE, // type
-         mpi_rank == 0 ? global_x.data() : nullptr, // receive buffer
-         per_proc_size.data(), // receive size
-         displacement.data(),
-         MPI_DOUBLE, // receive type
-         0, // main processor
-         mpi_comm // MPI Comminicator
-         );
-  MPI_Gatherv(z.data(), // send buffer
-         local_size, // send size
-         MPI_DOUBLE, // type
-         mpi_rank == 0 ? global_x.data() : nullptr, // receive buffer
-         per_proc_size.data(), // receive size
-         displacement.data(),
-         MPI_DOUBLE, // receive type
-         0, // main processor
-         mpi_comm // MPI Comminicator
-         );
-  MPI_Gatherv(local_index.data(), // send buffer
-       local_size, // send size
-       MPI_INT, // type
-       mpi_rank == 0 ? global_index.data() : nullptr, // receive buffer
-       per_proc_size.data(), // receive size
-       displacement.data(),
-       MPI_INT, // receive type
-       0, // main processor
-       mpi_comm // MPI Comminicator
-       );
-  if (mpi_rank == 0)
-    {
-    save_vector_as_binary(global_x, "global_x.bin", dof_handler.n_dofs());
-    save_vector_as_binary(global_y, "global_y.bin", dof_handler.n_dofs());
-    save_vector_as_binary(global_z, "global_z.bin", dof_handler.n_dofs());
-
-    }
-  MPI_Barrier(mpi_comm);
-}
-
-void
-Monodomain::run()
-{
-  // Create mesh
-  {
-    TimerOutput::Scope t(timer, "Create mesh");
-    Triangulation<dim> tria_dummy;
-
-    GridIn<dim> grid_in;
-    grid_in.attach_triangulation(tria_dummy);
-    std::ifstream mesh_file("../idealized_lv.msh");
-    grid_in.read_msh(mesh_file);
-
-    const double scale_factor = 1e-3;
-    GridTools::scale(scale_factor, tria_dummy);
-
-    GridTools::partition_triangulation(mpi_size, tria_dummy);
-
-    const TriangulationDescription::Description<dim, dim> description =
-      TriangulationDescription::Utilities::
-        create_description_from_triangulation(tria_dummy, mpi_comm);
-
-    tria.create_triangulation(description);
-  }
-
-  pcout << "\tNumber of active cells:       " << tria.n_global_active_cells()
-        << std::endl;
-
-  setup();
-  pcout << "\tNumber of degrees of freedom: " << dof_handler.n_dofs()
-        << std::endl;
-
-  u_old = -84e-3;
-  u     = u_old;
-
-  output_results();
-
-  assemble_time_independent_matrix();
-
-  // M/dt + A
-  system_matrix.copy_from(mass_matrix_dt);
-  system_matrix.add(+1, laplace_matrix);
-
-  amg_preconditioner.initialize(system_matrix);
-
-  while (time <= time_end)
-    {
-      time += dt;
-      Iapp->set_time(time);
-
-      ionic_model->solve(u_old);
-      assemble_time_terms();
-
-      solve();
-      pcout << "Solved at t = " << time << std::endl;
-      ++time_step;
-
-      if ((time_step % 10 == 0))
-        output_results();
-
-      u_old = u;
-    }
-  pcout << std::endl;
-}
-
-
-
 int
 main(int argc, char *argv[])
 {
@@ -616,16 +428,13 @@ main(int argc, char *argv[])
   Utilities::MPI::MPI_InitFinalize mpi_initialization(argc, argv, 1);
 
   Monodomain::Parameters     monodomain_params;
-  BuenoOrovio::Parameters    ionic_model_params;
-  Monodomain::Parameters     monodomain_params;
-  BuenoOrovio::Parameters    ionic_model_params;
+  BuenoOrovioGNO::Parameters ionic_model_params;
   AppliedCurrent::Parameters applied_current_params;
   ParameterAcceptor::initialize("../parameters.prm");
 
   Monodomain problem(monodomain_params,
                      ionic_model_params,
                      applied_current_params);
-
   problem.run();
 
   return 0;

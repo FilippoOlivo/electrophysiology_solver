@@ -128,10 +128,10 @@ model = GNO(edge_features=6, lifting_operator=lifting_operator, projection_opera
             n_layers=1).double()
 problem = GraphProblem()
 optimizer = TorchOptimizer(torch.optim.AdamW, lr=1e-3)
-solver = SupervisedSolver.load_from_checkpoint(checkpoint_path='checkpoints/n1_dim8_u/best-model.ckpt', problem=problem,
+solver = SupervisedSolver.load_from_checkpoint(checkpoint_path='checkpoints_ref/n1_dim8_u/best-model.ckpt', problem=problem,
                                                model=model, use_lt=False)
 model = solver._pina_models[0]
 model.to('cpu')
 model.eval()
 scripted_model = torch.jit.script(model)
-torch.jit.save(scripted_model, "scripted_model_u.pt")
+torch.jit.save(scripted_model, "scripted_model_ref_u.pt")

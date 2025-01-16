@@ -2,17 +2,20 @@
 
 #include <deal.II/base/parameter_acceptor.h>
 
+#include <deal.II/fe/fe_q.h>
+#include <deal.II/fe/mapping_q.h>
+
 #include <deal.II/lac/la_parallel_vector.h>
 
 #include "common.hpp"
+#include "torch_inference.hpp"
 #include "utils.hpp"
 
 
-class BuenoOrovio : public Common
+class BuenoOrovioGNO : public Common
 {
 public:
   friend class Monodomain;
-
   class Parameters : public ParameterAcceptor
   {
   public:
@@ -80,50 +83,38 @@ public:
     double k3         = 2.0994;
     double kso        = 2.0;
   };
-
-  static inline constexpr unsigned int N_VARS = 3;
-
-  BuenoOrovio(const Parameters &params);
-
+  BuenoOrovioGNO(const Parameters &params);
   void
-  setup(const IndexSet                         &locally_owned_dofs,
-        const IndexSet                         &locally_relevant_dofs,
-        const double                           &dt);
+  setup(const IndexSet &locally_owned_dofs,
+        const IndexSet &locally_relevant_dofs,
+        DoFHandler<3>  &dof_handler,
+        MappingQ<3>    &mapping);
 
-  std::array<double, N_VARS>
-  alpha(const double u) const;
-
-  std::array<double, N_VARS>
-  beta(const double u) const;
-
-  std::array<double, N_VARS>
-  w_inf(const double u) const;
 
   double
-  Iion_0d(const double u_old, const std::array<double, N_VARS> &w) const;
-
-  std::array<double, N_VARS>
-  solve_0d(const double u_old, const std::array<double, N_VARS> &w) const;
+  Iion_0d(const double u_old, const std::array<double, 3> &w) const;
 
   void
-  solve(const LinearAlgebra::distributed::Vector<double> &u_old);
+  solve_w(const LinearAlgebra::distributed::Vector<double> &u_old);
 
-  std::array<LinearAlgebra::distributed::Vector<double>, N_VARS>
-  get_w()
+  void
+  solve_u(const LinearAlgebra::distributed::Vector<double> &u_old);
+
+  void
+  solve_uw(const LinearAlgebra::distributed::Vector<double> &u_old);
+
+  torch::Tensor
+  get_w_tensor()
   {
-    return w;
+    return w_tensor;
   }
 
 private:
-  IndexSet locally_owned_dofs;
-  IndexSet locally_relevant_dofs;
-
-  double dt;
-
-  std::array<LinearAlgebra::distributed::Vector<double>, N_VARS> w_old;
-  std::array<LinearAlgebra::distributed::Vector<double>, N_VARS> w;
-
+  IndexSet                                   locally_owned_dofs;
+  IndexSet                                   locally_relevant_dofs;
   LinearAlgebra::distributed::Vector<double> Iion;
+  TorchInference                             torch_inference;
+  torch::Tensor                              w_tensor;
+  torch::Tensor                              u_old_tensor;
   const Parameters                          &params;
 };
-

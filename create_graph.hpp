@@ -1,6 +1,7 @@
 #include <deal.II/dofs/dof_tools.h>
 
 #include <deal.II/fe/fe_q.h>
+
 #include <mpi.h>
 
 #include <iostream>
@@ -9,10 +10,10 @@
 
 #include "knn.hpp"
 
-class GraphSaver
+class GraphCreator
 {
 public:
-  GraphSaver(int mpi_rank, int mpi_size, MPI_Comm &mpi_comm)
+  GraphCreator(int mpi_rank, int mpi_size, MPI_Comm &mpi_comm)
     : mpi_rank(mpi_rank)
     , mpi_size(mpi_size)
     , mpi_comm(mpi_comm)
@@ -32,15 +33,15 @@ public:
     save_points<double>(edge_attr, "attr");
     return std::make_pair(edge_index, edge_attr);
   }
-  
+
   void
   save_snapshot(IndexSet locally_owned_dofs,
                 std::array<LinearAlgebra::distributed::Vector<double>, 3> vec,
                 double                                                    time)
   {
-    
-    torch::Tensor snapshot_tensor = torch::zeros({static_cast<int64_t>(local_size),3}, torch::kDouble);
-    int                              i = 0;
+    torch::Tensor snapshot_tensor =
+      torch::zeros({static_cast<int64_t>(local_size), 3}, torch::kDouble);
+    int i = 0;
     for (auto idx : locally_owned_dofs)
       {
         std::vector<double> temp(3);
@@ -61,7 +62,7 @@ public:
                 std::string                                filename)
   {
     torch::Tensor snapshot_vector = torch::ones({local_size}, torch::kDouble);
-    int                 i = 0;
+    int           i               = 0;
     for (auto idx : locally_owned_dofs)
       {
         snapshot_vector[i] = vec[idx];
