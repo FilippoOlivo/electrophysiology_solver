@@ -94,18 +94,6 @@ TorchInference::get_tensor_type()
     }
 }
 
-void
-TorchInference::run(torch::Tensor &res, torch::Tensor &x,  double time)
-{ 
-  at::Tensor tensor = inputs[3].toTensor();
-  for (int i = 0; i < n_elements; ++i) {
-    tensor[i][0] = time;
-  }
-  inputs[0] = x;
-  inputs[3] = tensor;
-  res = model->forward(inputs).toTensor();
-}
-
 void 
 TorchInference::run(torch::Tensor &x)
 {

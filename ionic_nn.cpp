@@ -48,8 +48,8 @@ BuenoOrovioGNO::setup(const IndexSet &locally_owned_dofs,
 void
 BuenoOrovioGNO::solve_w(const LinearAlgebra::distributed::Vector<double> &u_old)
 {
-  torch::NoGradGuard no_grad;
-
+  // Perform inference in torch for the model which takes as input w
+  torch::NoGradGuard no_grad; // Avoid gradient computation
   torch_inference.run(w_tensor);
   auto w_data = w_tensor.accessor<double, 2>();
   Iion.zero_out_ghost_values();
@@ -66,9 +66,10 @@ void
 BuenoOrovioGNO::solve_uw(
   const LinearAlgebra::distributed::Vector<double> &u_old)
 {
+  // Perform inference in torch for the model which takes as input u and w
   torch::NoGradGuard no_grad;
   unsigned int       i = 0;
-
+  // Copy values of u_old into a torch Tensor
   for (const types::global_dof_index idx : locally_owned_dofs)
     {
       u_old_tensor[i][0] = u_old[idx];
@@ -92,9 +93,10 @@ BuenoOrovioGNO::solve_uw(
 void
 BuenoOrovioGNO::solve_u(const LinearAlgebra::distributed::Vector<double> &u_old)
 {
+  // Perform inference in torch for the model which takes as input u
   torch::NoGradGuard no_grad;
   unsigned int       i = 0;
-
+  // Copy values of u_old into a torch Tensor
   for (const types::global_dof_index idx : locally_owned_dofs)
     {
       u_old_tensor[i][0] = u_old[idx];
@@ -117,8 +119,6 @@ double
 BuenoOrovioGNO::Iion_0d(const double                 u_old,
                         const std::array<double, 3> &w) const
 {
-  // TimerOutput::Scope t(timer, "Compute Iion");
-
   const double Iion_val =
     utils::heaviside_sharp(u_old, params.V1) * (u_old - params.V1) *
       (params.Vhat - u_old) * w[0] / params.taufi -
