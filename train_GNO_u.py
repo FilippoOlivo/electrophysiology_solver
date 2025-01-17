@@ -82,7 +82,7 @@ def train_model(solver, n_layers, hidden_dim):
 def save_compiled_model(solver, hidden_dim, n_layers, model_name):
     model = solver._pina_models[0]
     problem = solver.problem
-    solver = SupervisedSolver.load_from_checkpoint('checkpoints/'+'n' + str(n_layers) + '_dim' + str(
+    solver = GraphSupervisedSolver.load_from_checkpoint('checkpoints/'+'n' + str(n_layers) + '_dim' + str(
         hidden_dim) + '_w'+'/best-model.ckpt', problem=problem, model=model, use_lt=False)
     model = solver._pina_models[0]
     model.to('cpu')
